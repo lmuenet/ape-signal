@@ -14,6 +14,15 @@ describe("splitMessage", () => {
     for (const c of chunks) expect(c.length).toBeLessThanOrEqual(4000);
     expect(chunks.join("\n")).toBe(text);
   });
+
+  it("hard-splits a single over-long line into limit-sized pieces", () => {
+    const line = "x".repeat(8200);
+    const chunks = splitMessage(line, 4000);
+    expect(chunks).toHaveLength(3); // 4000 + 4000 + 200
+    for (const c of chunks) expect(c.length).toBeLessThanOrEqual(4000);
+    // pieces of one hard-split line rejoin without separators
+    expect(chunks.join("")).toBe(line);
+  });
 });
 
 describe("createTelegramClient.sendMessage", () => {

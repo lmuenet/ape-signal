@@ -9,6 +9,9 @@ const LABEL = process.argv[2] ?? "Scan";
 const LIMIT = Number(process.env.SCAN_LIMIT ?? "15");
 
 async function main(): Promise<void> {
+  if (!Number.isFinite(LIMIT) || LIMIT <= 0) {
+    throw new Error(`Invalid SCAN_LIMIT (must be a positive number): ${process.env.SCAN_LIMIT}`);
+  }
   const env = loadEnv();
   const telegram = createTelegramClient({
     botToken: env.telegramBotToken,

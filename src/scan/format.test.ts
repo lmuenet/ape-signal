@@ -30,6 +30,7 @@ describe("formatReport", () => {
     const out = formatReport(rows, challenge, { label: "Pre-US" });
     expect(out).toContain("🚫"); // noise
     expect(out).toContain("✅"); // signal
+    expect(out).toContain("guidance call"); // watch field rendered
     expect(out.toLowerCase()).toContain("not financial advice");
   });
 
