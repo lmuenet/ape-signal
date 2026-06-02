@@ -36,6 +36,7 @@ export function formatReport(
     for (const r of rows) {
       lines.push(`#${r.rank} ${r.ticker} — ${r.mentions} mentions ${trendArrow(r)}`);
     }
+    lines.push("");
   } else {
     for (const v of challenge.verdicts) {
       const r = byTicker.get(v.ticker);
@@ -43,9 +44,10 @@ export function formatReport(
       const thesis = v.thesis ? ` — ${v.thesis}` : "";
       lines.push(`${VERDICT_SYMBOL[v.verdict]} ${v.ticker}${meta2}${thesis}`);
       if (v.watch) lines.push(`   👁 watch: ${v.watch}`);
+      lines.push(""); // blank line separates each stock for readability
     }
   }
 
-  lines.push("", "For personal research — not financial advice.");
+  lines.push("For personal research — not financial advice.");
   return lines.join("\n");
 }
