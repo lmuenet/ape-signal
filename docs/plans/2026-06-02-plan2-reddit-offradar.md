@@ -1,14 +1,32 @@
-# Plan 2: Reddit Off-Radar Candidates + Finnhub Earnings — Implementation Plan
+# Plan 2: Reddit Off-Radar (via agent-browser) + Finnhub Earnings — Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Enrich the daily scan with (a) a "🔥 Reddit Off-Radar" section — tickers buzzing on r/wallstreetbets, r/wallstreetbetsGER, r/shortsqueeze that are NOT already in the Apewisdom ranked list, each challenged by Claude — and (b) an "📅 Earnings today" section from Finnhub.
 
-**Architecture:** A read-only Reddit OAuth client (client_credentials grant) fetches hot/rising posts; a ticker extractor tallies mentions; off-radar candidates (not in Apewisdom) are mapped to `TrendingRow`-shaped entries and merged into the SINGLE existing Claude challenge (one `claude -p` call). The formatter splits verdicts into Apewisdom vs Off-Radar by origin. Finnhub supplies same-day earnings for the scanned tickers. All new pieces are dependency-injected; Reddit/Finnhub are OPTIONAL in the pipeline so Plan 1's behaviour is unchanged when creds are absent.
+**Architecture:** The Reddit crawl uses **[agent-browser](https://github.com/vercel-labs/agent-browser)** (Vercel Labs) — a native browser-automation CLI installed via npm (`npm i -g agent-browser`). A Node wrapper (`src/reddit/agentBrowser.ts`) spawns the CLI to `open` each public `old.reddit.com` "hot" page and `eval` a small `querySelectorAll('div.thing')` script that returns posts as JSON (`{title, score, comments}`). The runner is dependency-injected, so Node stays unit-testable. A ticker extractor tallies mentions; off-radar candidates (not in Apewisdom) are mapped to `TrendingRow`-shaped entries and merged into the SINGLE existing Claude challenge (one `claude -p` call). The formatter splits verdicts into Apewisdom vs Off-Radar by origin. Finnhub supplies same-day earnings.
 
-**Tech Stack:** TypeScript, tsx, vitest, Reddit OAuth (`oauth.reddit.com`), Finnhub (`fetchNextEarnings` from the submodule), Node global `fetch`.
+**Why agent-browser (vs crawl4ai/Playwright or the Reddit OAuth JSON API):** pure npm install (no Python, no Playwright, no Reddit API app); a real Chrome renders the page so it is resilient to bot walls; the `eval` command gives us structured extraction in one shot. All Reddit/Finnhub features are OPTIONAL in the pipeline, so Plan 1's behaviour is unchanged when they are disabled/absent.
 
-**Backward-compat invariant:** `formatReport(rows, challenge, meta)` keeps its 3-arg shape; new behaviour rides on optional `ReportMeta` fields, so existing Plan 1 tests stay green.
+**Tech Stack:** TypeScript, tsx, vitest, Node `child_process`; `agent-browser` CLI (runtime only, on the VPS); Finnhub (`fetchNextEarnings` from the submodule).
+
+**Backward-compat invariant:** `formatReport(rows, challenge, meta)` keeps its 3-arg shape; new behaviour rides on optional `ReportMeta` fields, so existing Plan 1 tests stay green. The pipeline's reddit/earnings deps are optional, and a reddit-crawl failure is caught so the scan still delivers.
+
+---
+
+## Prerequisites (for the final manual run only — NOT for unit tasks)
+
+On the machine that runs the live scan (your VPS, or locally for a smoke test):
+```bash
+npm install -g agent-browser
+agent-browser install        # downloads Chrome for Testing
+```
+Tasks 1–8 are pure Node TDD and need none of this. Only Task 9 (manual run) uses the real `agent-browser` CLI.
+
+**agent-browser command crib** (verify against your installed version — `agent-browser --help`):
+- `agent-browser --session <name> open <url>` — navigate
+- `agent-browser --session <name> eval "<js>"` — run JS, print the returned value
+The Node↔CLI boundary is the stable JSON contract `Record<sub, RawRedditPost[]>`; if a flag differs in your version, adjust the wrapper, not the contract.
 
 ---
 
@@ -16,55 +34,43 @@
 
 | Path | Responsibility | New/Mod |
 |---|---|---|
-| `src/config/env.ts` | add optional reddit/finnhub vars + `requireReddit`/`requireFinnhub` guards | Mod |
-| `src/reddit/auth.ts` | `fetchRedditToken` — client_credentials OAuth | New |
-| `src/reddit/client.ts` | `fetchSubreddit` — fetch a listing, normalise posts | New |
+| `src/config/env.ts` | telegram (required) + optional finnhub + `ENABLE_REDDIT_CRAWL` flag + `requireFinnhub` | Mod |
+| `src/reddit/agentBrowser.ts` | spawn `agent-browser` (injectable runner) + normalise posts (`toPosts`, `parseScore`, `parseEvalJson`) | New |
 | `src/reddit/tickers.ts` | `extractTickers` + `tallyTickers` | New |
-| `src/reddit/crawl.ts` | `crawlReddit` — token → fetch subs → tally → ranked candidates | New |
+| `src/reddit/crawl.ts` | `crawlReddit` — run crawl → tally → ranked candidates | New |
 | `src/scan/offradar.ts` | `offRadar` — filter candidates not in Apewisdom, by min mentions | New |
 | `src/scan/earnings.ts` | `fetchEarningsToday` — same-day earnings for given tickers | New |
 | `src/core/ape-intel.ts` | add `fetchNextEarnings` + `EarningsDate` re-exports | Mod |
 | `src/scan/format.ts` | split Off-Radar section + Earnings section via `ReportMeta` | Mod |
-| `src/scan/pipeline.ts` | merge off-radar into the single challenge; collect earnings | Mod |
-| `src/scan/index.ts` | wire reddit + finnhub deps from env | Mod |
+| `src/scan/pipeline.ts` | merge off-radar into the single challenge; collect earnings; tolerate crawl failure | Mod |
+| `src/scan/index.ts` | wire agent-browser + finnhub deps from env | Mod |
+| `.env.example` | reddit-crawl flags (no OAuth) | Mod |
 
 ---
 
-## Task 1: Extend env loader (optional reddit + finnhub)
+## Task 1: Env loader (optional finnhub + reddit-crawl flag)
 
-**Files:** Modify `src/config/env.ts`; Modify `src/config/env.test.ts`
+**Files:** Modify `src/config/env.ts`, `src/config/env.test.ts`, `.env.example`
 
-- [ ] **Step 1: Add failing tests** (append inside the existing `describe("loadEnv", …)` or add new describes)
+- [ ] **Step 1: Add failing tests** (append to `src/config/env.test.ts`)
 
 ```ts
 // add to src/config/env.test.ts
-import { loadEnv, requireReddit, requireFinnhub } from "./env";
+import { loadEnv, requireFinnhub } from "./env";
 
-describe("optional reddit + finnhub", () => {
-  it("passes through reddit + finnhub vars when present", () => {
-    const cfg = loadEnv({
-      TELEGRAM_BOT_TOKEN: "t",
-      TELEGRAM_CHAT_ID: "c",
-      REDDIT_CLIENT_ID: "id",
-      REDDIT_CLIENT_SECRET: "sec",
-      REDDIT_USER_AGENT: "ua",
-      FINNHUB_API_KEY: "fk",
-    });
-    expect(cfg.redditClientId).toBe("id");
-    expect(cfg.finnhubApiKey).toBe("fk");
-  });
-
-  it("requireReddit returns creds when complete", () => {
+describe("optional finnhub + reddit-crawl flag", () => {
+  it("passes through finnhub key and reddit-crawl flag", () => {
     const cfg = loadEnv({
       TELEGRAM_BOT_TOKEN: "t", TELEGRAM_CHAT_ID: "c",
-      REDDIT_CLIENT_ID: "id", REDDIT_CLIENT_SECRET: "sec", REDDIT_USER_AGENT: "ua",
+      FINNHUB_API_KEY: "fk", ENABLE_REDDIT_CRAWL: "1",
     });
-    expect(requireReddit(cfg)).toEqual({ clientId: "id", clientSecret: "sec", userAgent: "ua" });
+    expect(cfg.finnhubApiKey).toBe("fk");
+    expect(cfg.redditCrawlEnabled).toBe(true);
   });
 
-  it("requireReddit throws when any reddit var missing", () => {
-    const cfg = loadEnv({ TELEGRAM_BOT_TOKEN: "t", TELEGRAM_CHAT_ID: "c", REDDIT_CLIENT_ID: "id" });
-    expect(() => requireReddit(cfg)).toThrow(/REDDIT_CLIENT_SECRET|REDDIT_USER_AGENT/);
+  it("defaults reddit-crawl flag to false", () => {
+    const cfg = loadEnv({ TELEGRAM_BOT_TOKEN: "t", TELEGRAM_CHAT_ID: "c" });
+    expect(cfg.redditCrawlEnabled).toBe(false);
   });
 
   it("requireFinnhub throws when key missing", () => {
@@ -74,28 +80,17 @@ describe("optional reddit + finnhub", () => {
 });
 ```
 
-- [ ] **Step 2: Run, expect FAIL**
+- [ ] **Step 2: Run, expect FAIL** — `npx vitest run src/config/env.test.ts`.
 
-Run: `npx vitest run src/config/env.test.ts`
-Expected: FAIL — `requireReddit`/`requireFinnhub` not exported.
-
-- [ ] **Step 3: Implement** — replace the whole `src/config/env.ts` with:
+- [ ] **Step 3: Implement** — replace `src/config/env.ts` with:
 
 ```ts
 // src/config/env.ts
 export interface Env {
   telegramBotToken: string;
   telegramChatId: string;
-  redditClientId?: string;
-  redditClientSecret?: string;
-  redditUserAgent?: string;
   finnhubApiKey?: string;
-}
-
-export interface RedditCreds {
-  clientId: string;
-  clientSecret: string;
-  userAgent: string;
+  redditCrawlEnabled: boolean;
 }
 
 const REQUIRED = ["TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID"] as const;
@@ -105,10 +100,16 @@ function val(source: Record<string, string | undefined>, key: string): string | 
   return v && v.trim() !== "" ? v : undefined;
 }
 
+function truthy(v: string | undefined): boolean {
+  if (!v) return false;
+  const t = v.trim().toLowerCase();
+  return t === "1" || t === "true" || t === "on" || t === "yes";
+}
+
 /**
  * Validate and shape the process environment. Telegram vars are required;
- * reddit + finnhub are optional here and validated on demand by the guards
- * below, so Plan 1 (telegram-only) still runs without them.
+ * finnhub is optional (validated on demand by requireFinnhub); the reddit crawl
+ * is opt-in via ENABLE_REDDIT_CRAWL so Plan 1 behaviour is the default.
  */
 export function loadEnv(source: Record<string, string | undefined> = process.env): Env {
   const missing = REQUIRED.filter((k) => val(source, k) === undefined);
@@ -118,26 +119,8 @@ export function loadEnv(source: Record<string, string | undefined> = process.env
   return {
     telegramBotToken: source.TELEGRAM_BOT_TOKEN!,
     telegramChatId: source.TELEGRAM_CHAT_ID!,
-    redditClientId: val(source, "REDDIT_CLIENT_ID"),
-    redditClientSecret: val(source, "REDDIT_CLIENT_SECRET"),
-    redditUserAgent: val(source, "REDDIT_USER_AGENT"),
     finnhubApiKey: val(source, "FINNHUB_API_KEY"),
-  };
-}
-
-/** Throw unless all three reddit credentials are present. */
-export function requireReddit(env: Env): RedditCreds {
-  const missing: string[] = [];
-  if (!env.redditClientId) missing.push("REDDIT_CLIENT_ID");
-  if (!env.redditClientSecret) missing.push("REDDIT_CLIENT_SECRET");
-  if (!env.redditUserAgent) missing.push("REDDIT_USER_AGENT");
-  if (missing.length > 0) {
-    throw new Error(`Missing reddit environment variables: ${missing.join(", ")}`);
-  }
-  return {
-    clientId: env.redditClientId!,
-    clientSecret: env.redditClientSecret!,
-    userAgent: env.redditUserAgent!,
+    redditCrawlEnabled: truthy(source.ENABLE_REDDIT_CRAWL),
   };
 }
 
@@ -148,159 +131,109 @@ export function requireFinnhub(env: Env): string {
 }
 ```
 
-- [ ] **Step 4: Run, expect PASS**
+- [ ] **Step 4: Update `.env.example`** — replace its contents with:
 
-Run: `npx vitest run src/config/env.test.ts`
-Expected: PASS (all, incl. the two original tests).
+```
+# Ape Signal — environment template.
+# Copy to /etc/ape-signal.env on the VPS (chmod 600). NEVER commit real values.
+# Claude needs NO key here — it runs via `claude login` (subscription).
 
-- [ ] **Step 5: Commit**
+# Telegram (BotFather)
+TELEGRAM_BOT_TOKEN=
+TELEGRAM_CHAT_ID=
+
+# Finnhub (earnings + news)
+FINNHUB_API_KEY=
+
+# Reddit crawl via agent-browser (opt-in; requires `npm i -g agent-browser && agent-browser install`)
+ENABLE_REDDIT_CRAWL=
+REDDIT_SUBREDDITS=wallstreetbets,wallstreetbetsGER,shortsqueeze
+AGENT_BROWSER_BIN=agent-browser
+```
+
+- [ ] **Step 5: Run, expect PASS**, then commit.
 
 ```bash
-git add src/config/env.ts src/config/env.test.ts
-git commit -m "feat: optional reddit + finnhub env vars with guards"
+git add src/config/env.ts src/config/env.test.ts .env.example
+git commit -m "feat: env finnhub key + reddit-crawl opt-in flag"
 ```
 
 ---
 
-## Task 2: Reddit OAuth token
+## Task 2: agent-browser wrapper
 
-**Files:** Create `src/reddit/auth.ts`; Test `src/reddit/auth.test.ts`
+**Files:** Create `src/reddit/agentBrowser.ts`; Test `src/reddit/agentBrowser.test.ts`
+
+The `spawnAgentBrowser` runner is validated by the manual run (Task 9), same policy as the `claude -p` spawn path. The pure helpers (`parseScore`, `toPosts`, `parseEvalJson`) are unit-tested here.
 
 - [ ] **Step 1: Write failing test**
 
 ```ts
-// src/reddit/auth.test.ts
-import { describe, it, expect, vi } from "vitest";
-import { fetchRedditToken } from "./auth";
+// src/reddit/agentBrowser.test.ts
+import { describe, it, expect } from "vitest";
+import { parseScore, toPosts, parseEvalJson } from "./agentBrowser";
 
-const creds = { clientId: "id", clientSecret: "sec", userAgent: "ua/0.1" };
-
-describe("fetchRedditToken", () => {
-  it("posts client_credentials with basic auth + UA and returns the token", async () => {
-    const fetchFn = vi.fn(async () =>
-      new Response(JSON.stringify({ access_token: "abc", token_type: "bearer" }), { status: 200 }),
-    );
-    const token = await fetchRedditToken(creds, fetchFn as unknown as typeof fetch);
-    expect(token).toBe("abc");
-    const [url, init] = fetchFn.mock.calls[0];
-    expect(url).toBe("https://www.reddit.com/api/v1/access_token");
-    const headers = (init as RequestInit).headers as Record<string, string>;
-    expect(headers.Authorization).toBe(`Basic ${Buffer.from("id:sec").toString("base64")}`);
-    expect(headers["User-Agent"]).toBe("ua/0.1");
-    expect((init as RequestInit).body).toBe("grant_type=client_credentials");
-  });
-
-  it("throws on non-ok auth response", async () => {
-    const fetchFn = vi.fn(async () => new Response("nope", { status: 401 }));
-    await expect(fetchRedditToken(creds, fetchFn as unknown as typeof fetch)).rejects.toThrow(/401/);
-  });
-
-  it("throws when no access_token in body", async () => {
-    const fetchFn = vi.fn(async () => new Response(JSON.stringify({}), { status: 200 }));
-    await expect(fetchRedditToken(creds, fetchFn as unknown as typeof fetch)).rejects.toThrow(/access_token/);
+describe("parseScore", () => {
+  it("parses plain, k and m suffixes; hidden/garbage -> 0", () => {
+    expect(parseScore("12")).toBe(12);
+    expect(parseScore("1.2k")).toBe(1200);
+    expect(parseScore("3M")).toBe(3_000_000);
+    expect(parseScore("•")).toBe(0);
+    expect(parseScore(undefined)).toBe(0);
   });
 });
-```
 
-- [ ] **Step 2: Run, expect FAIL** — `npx vitest run src/reddit/auth.test.ts` (cannot resolve `./auth`).
-
-- [ ] **Step 3: Implement**
-
-```ts
-// src/reddit/auth.ts
-import type { RedditCreds } from "../config/env";
-
-const TOKEN_URL = "https://www.reddit.com/api/v1/access_token";
-
-/**
- * Application-only OAuth (client_credentials grant) for read-only access to
- * public subreddit listings. No user password required.
- */
-export async function fetchRedditToken(
-  creds: RedditCreds,
-  fetchFn: typeof fetch = fetch,
-): Promise<string> {
-  const basic = Buffer.from(`${creds.clientId}:${creds.clientSecret}`).toString("base64");
-  const res = await fetchFn(TOKEN_URL, {
-    method: "POST",
-    headers: {
-      Authorization: `Basic ${basic}`,
-      "Content-Type": "application/x-www-form-urlencoded",
-      "User-Agent": creds.userAgent,
-    },
-    body: "grant_type=client_credentials",
-  });
-  if (!res.ok) throw new Error(`Reddit auth failed: ${res.status}`);
-  const data = (await res.json().catch(() => ({}))) as { access_token?: string };
-  if (!data.access_token) throw new Error("Reddit auth: no access_token in response");
-  return data.access_token;
-}
-```
-
-- [ ] **Step 4: Run, expect PASS** — `npx vitest run src/reddit/auth.test.ts` (all three).
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add src/reddit/auth.ts src/reddit/auth.test.ts
-git commit -m "feat: reddit client_credentials oauth token"
-```
-
----
-
-## Task 3: Reddit subreddit client
-
-**Files:** Create `src/reddit/client.ts`; Test `src/reddit/client.test.ts`
-
-- [ ] **Step 1: Write failing test**
-
-```ts
-// src/reddit/client.test.ts
-import { describe, it, expect, vi } from "vitest";
-import { fetchSubreddit } from "./client";
-
-function listing() {
-  return {
-    data: {
-      children: [
-        { data: { title: "$GME to the moon", selftext: "yolo", score: 120, num_comments: 45 } },
-        { data: { title: "thoughts on KSS?", selftext: "", score: 10, num_comments: 3 } },
-      ],
-    },
-  };
-}
-
-describe("fetchSubreddit", () => {
-  it("calls the oauth host with bearer + UA and normalises posts", async () => {
-    const fetchFn = vi.fn(async () => new Response(JSON.stringify(listing()), { status: 200 }));
-    const posts = await fetchSubreddit("TKN", "wallstreetbets", "hot", 25, "ua", fetchFn as unknown as typeof fetch);
-    const [url, init] = fetchFn.mock.calls[0];
-    expect(url).toBe("https://oauth.reddit.com/r/wallstreetbets/hot?limit=25&raw_json=1");
-    const headers = (init as RequestInit).headers as Record<string, string>;
-    expect(headers.Authorization).toBe("Bearer TKN");
-    expect(headers["User-Agent"]).toBe("ua");
+describe("toPosts", () => {
+  it("normalises raw posts and drops title-less rows", () => {
+    const posts = toPosts([
+      { title: "$GME squeeze", score: "1.2k", comments: "45 comments" },
+      { score: "5", comments: "0 comments" },
+      { title: "KSS run", score: "•", comments: "1 comment" },
+    ]);
     expect(posts).toEqual([
-      { title: "$GME to the moon", selftext: "yolo", score: 120, numComments: 45 },
-      { title: "thoughts on KSS?", selftext: "", score: 10, numComments: 3 },
+      { title: "$GME squeeze", selftext: "", score: 1200, numComments: 45 },
+      { title: "KSS run", selftext: "", score: 0, numComments: 1 },
     ]);
   });
+});
 
-  it("throws on non-ok", async () => {
-    const fetchFn = vi.fn(async () => new Response("x", { status: 429 }));
-    await expect(
-      fetchSubreddit("TKN", "shortsqueeze", "hot", 25, "ua", fetchFn as unknown as typeof fetch),
-    ).rejects.toThrow(/shortsqueeze.*429/);
+describe("parseEvalJson", () => {
+  const arr = [{ title: "$GME", score: "5", comments: "1 comment" }];
+  it("parses a raw JSON array printed by eval", () => {
+    expect(parseEvalJson(JSON.stringify(arr))).toEqual(arr);
+  });
+  it("parses a double-encoded JSON string (eval returned a string)", () => {
+    expect(parseEvalJson(JSON.stringify(JSON.stringify(arr)))).toEqual(arr);
+  });
+  it("parses a {result: ...} wrapper (--json style)", () => {
+    expect(parseEvalJson(JSON.stringify({ result: JSON.stringify(arr) }))).toEqual(arr);
+    expect(parseEvalJson(JSON.stringify({ result: arr }))).toEqual(arr);
+  });
+  it("recovers an array embedded in surrounding log noise", () => {
+    expect(parseEvalJson(`some log\n${JSON.stringify(arr)}\nbye`)).toEqual(arr);
+  });
+  it("returns [] when no array can be found", () => {
+    expect(parseEvalJson("no json here")).toEqual([]);
   });
 });
 ```
 
-- [ ] **Step 2: Run, expect FAIL** — cannot resolve `./client`.
+- [ ] **Step 2: Run, expect FAIL** — cannot resolve `./agentBrowser`.
 
 - [ ] **Step 3: Implement**
 
 ```ts
-// src/reddit/client.ts
-export type RedditListing = "hot" | "rising" | "top" | "new";
+// src/reddit/agentBrowser.ts
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+
+const execFileAsync = promisify(execFile);
+
+export interface RawRedditPost {
+  title?: string;
+  score?: string;
+  comments?: string;
+}
 
 export interface RedditPost {
   title: string;
@@ -309,34 +242,107 @@ export interface RedditPost {
   numComments: number;
 }
 
-interface RawChild {
-  data?: { title?: string; selftext?: string; score?: number; num_comments?: number };
-}
-interface RawListing {
-  data?: { children?: RawChild[] };
+export type CrawlRunner = (subreddits: string[]) => Promise<Record<string, RawRedditPost[]>>;
+
+export interface AgentBrowserConfig {
+  bin: string; // e.g. "agent-browser"
+  session: string; // isolated browser session name
 }
 
-/** Fetch one subreddit listing via the OAuth host and normalise the posts. */
-export async function fetchSubreddit(
-  token: string,
-  subreddit: string,
-  listing: RedditListing,
-  limit: number,
-  userAgent: string,
-  fetchFn: typeof fetch = fetch,
-): Promise<RedditPost[]> {
-  const url = `https://oauth.reddit.com/r/${subreddit}/${listing}?limit=${limit}&raw_json=1`;
-  const res = await fetchFn(url, {
-    headers: { Authorization: `Bearer ${token}`, "User-Agent": userAgent },
-  });
-  if (!res.ok) throw new Error(`Reddit ${subreddit} returned ${res.status}`);
-  const body = (await res.json().catch(() => ({}))) as RawListing;
-  return (body.data?.children ?? []).map((c) => ({
-    title: c.data?.title ?? "",
-    selftext: c.data?.selftext ?? "",
-    score: c.data?.score ?? 0,
-    numComments: c.data?.num_comments ?? 0,
-  }));
+// JS evaluated on old.reddit.com to return posts as a JSON string.
+const EXTRACT_JS =
+  "JSON.stringify(Array.from(document.querySelectorAll('div.thing')).map(function(t){" +
+  "var a=t.querySelector('a.title');var s=t.querySelector('.score.unvoted');var c=t.querySelector('a.comments');" +
+  "return{title:a&&a.innerText,score:s&&s.innerText,comments:c&&c.innerText};}))";
+
+/** Parse reddit score text ("1.2k", "12", "3M", "•"/hidden) into an integer. */
+export function parseScore(text: string | undefined): number {
+  if (!text) return 0;
+  const m = text.trim().toLowerCase().match(/^([\d.]+)\s*(k|m)?$/);
+  if (!m) return 0;
+  const n = parseFloat(m[1]);
+  if (Number.isNaN(n)) return 0;
+  const mult = m[2] === "k" ? 1000 : m[2] === "m" ? 1_000_000 : 1;
+  return Math.round(n * mult);
+}
+
+function parseComments(text: string | undefined): number {
+  if (!text) return 0;
+  const m = text.match(/(\d[\d,]*)/);
+  return m ? Number(m[1].replace(/,/g, "")) : 0;
+}
+
+/** Normalise raw posts; drop rows without a title. */
+export function toPosts(raw: RawRedditPost[]): RedditPost[] {
+  return raw
+    .filter((p) => typeof p.title === "string" && p.title.trim() !== "")
+    .map((p) => ({
+      title: p.title!.trim(),
+      selftext: "",
+      score: parseScore(p.score),
+      numComments: parseComments(p.comments),
+    }));
+}
+
+/**
+ * Robustly extract the posts array from `agent-browser eval` stdout. Handles:
+ * a raw JSON array, a double-encoded JSON string, a `{result: …}` wrapper, and
+ * an array embedded in surrounding log noise. Returns [] if nothing parses.
+ */
+export function parseEvalJson(stdout: string): RawRedditPost[] {
+  const asArray = (v: unknown): RawRedditPost[] | null => (Array.isArray(v) ? (v as RawRedditPost[]) : null);
+  const tryParse = (s: string): unknown => {
+    try {
+      return JSON.parse(s);
+    } catch {
+      return undefined;
+    }
+  };
+
+  let parsed = tryParse(stdout.trim());
+  if (typeof parsed === "string") parsed = tryParse(parsed); // double-encoded
+  if (parsed && typeof parsed === "object" && !Array.isArray(parsed) && "result" in (parsed as object)) {
+    const r = (parsed as { result: unknown }).result;
+    parsed = typeof r === "string" ? tryParse(r) : r;
+  }
+  const direct = asArray(parsed);
+  if (direct) return direct;
+
+  // Fallback: widest [...] span in the output.
+  const first = stdout.indexOf("[");
+  const last = stdout.lastIndexOf("]");
+  if (first !== -1 && last > first) {
+    const span = asArray(tryParse(stdout.slice(first, last + 1)));
+    if (span) return span;
+  }
+  return [];
+}
+
+/**
+ * Default runner: drive the agent-browser CLI to open each subreddit's hot page
+ * and eval the extraction script. A subreddit that errors yields [] (so one bad
+ * sub never aborts the crawl).
+ */
+export function spawnAgentBrowser(config: AgentBrowserConfig): CrawlRunner {
+  return async (subreddits) => {
+    const out: Record<string, RawRedditPost[]> = {};
+    for (const sub of subreddits) {
+      const url = `https://old.reddit.com/r/${sub}/hot/`;
+      try {
+        await execFileAsync(config.bin, ["--session", config.session, "open", url]);
+        const { stdout } = await execFileAsync(
+          config.bin,
+          ["--session", config.session, "eval", EXTRACT_JS],
+          { maxBuffer: 8 * 1024 * 1024 },
+        );
+        out[sub] = parseEvalJson(stdout);
+      } catch (err) {
+        console.error(`[agent-browser] ${sub}: ${err instanceof Error ? err.message : String(err)}`);
+        out[sub] = [];
+      }
+    }
+    return out;
+  };
 }
 ```
 
@@ -345,13 +351,13 @@ export async function fetchSubreddit(
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/reddit/client.ts src/reddit/client.test.ts
-git commit -m "feat: reddit subreddit listing client"
+git add src/reddit/agentBrowser.ts src/reddit/agentBrowser.test.ts
+git commit -m "feat: agent-browser node wrapper (spawn + post/eval parsing)"
 ```
 
 ---
 
-## Task 4: Ticker extraction + tally
+## Task 3: Ticker extraction + tally
 
 **Files:** Create `src/reddit/tickers.ts`; Test `src/reddit/tickers.test.ts`
 
@@ -361,13 +367,12 @@ git commit -m "feat: reddit subreddit listing client"
 // src/reddit/tickers.test.ts
 import { describe, it, expect } from "vitest";
 import { extractTickers, tallyTickers } from "./tickers";
-import type { RedditPost } from "./client";
+import type { RedditPost } from "./agentBrowser";
 
 describe("extractTickers", () => {
   it("extracts cashtags case-insensitively", () => {
     expect(extractTickers("buying $gme and $AMC today")).toEqual(expect.arrayContaining(["GME", "AMC"]));
   });
-
   it("extracts bare uppercase tickers but drops common stopwords", () => {
     const out = extractTickers("KSS looks good but YOLO and the CEO said DD on FDA");
     expect(out).toContain("KSS");
@@ -376,7 +381,6 @@ describe("extractTickers", () => {
     expect(out).not.toContain("DD");
     expect(out).not.toContain("FDA");
   });
-
   it("dedupes within a single text", () => {
     expect(extractTickers("$GME $GME GME")).toEqual(["GME"]);
   });
@@ -394,18 +398,15 @@ describe("tallyTickers", () => {
 });
 ```
 
-(Note: in post 1 "$KSS" + "KSS" are the same ticker within one post → counts as one mention for that post; mentions counts POSTS that mention the ticker, not raw occurrences.)
-
 - [ ] **Step 2: Run, expect FAIL** — cannot resolve `./tickers`.
 
 - [ ] **Step 3: Implement**
 
 ```ts
 // src/reddit/tickers.ts
-import type { RedditPost } from "./client";
+import type { RedditPost } from "./agentBrowser";
 
-// High-frequency uppercase words that are NOT tickers. Tuned to reduce
-// false positives from WSB slang / finance acronyms.
+// High-frequency uppercase words that are NOT tickers (WSB slang / finance acronyms).
 const STOPWORDS = new Set<string>([
   "THE", "AND", "FOR", "ARE", "BUT", "NOT", "YOU", "ALL", "CAN", "HAS", "WAS",
   "YOLO", "DD", "WSB", "CEO", "CFO", "FDA", "SEC", "USA", "US", "IT", "OR", "ON",
@@ -458,7 +459,7 @@ git commit -m "feat: reddit ticker extraction + tally"
 
 ---
 
-## Task 5: Reddit crawl orchestrator
+## Task 4: Reddit crawl orchestrator
 
 **Files:** Create `src/reddit/crawl.ts`; Test `src/reddit/crawl.test.ts`
 
@@ -468,38 +469,29 @@ git commit -m "feat: reddit ticker extraction + tally"
 // src/reddit/crawl.test.ts
 import { describe, it, expect, vi } from "vitest";
 import { crawlReddit } from "./crawl";
-import type { RedditPost } from "./client";
+import type { RawRedditPost } from "./agentBrowser";
 
 describe("crawlReddit", () => {
-  it("aggregates tallies across subreddits and returns mention-sorted candidates", async () => {
-    const bySub: Record<string, RedditPost[]> = {
-      wallstreetbets: [{ title: "$KSS squeeze", selftext: "", score: 50, numComments: 5 }],
+  it("runs the crawl, tallies across subreddits, returns mention-sorted candidates", async () => {
+    const raw: Record<string, RawRedditPost[]> = {
+      wallstreetbets: [{ title: "$KSS squeeze", score: "50", comments: "5 comments" }],
       shortsqueeze: [
-        { title: "$KSS again", selftext: "", score: 30, numComments: 2 },
-        { title: "$BBBY revival", selftext: "", score: 10, numComments: 1 },
+        { title: "$KSS again", score: "30", comments: "2 comments" },
+        { title: "$BBBY revival", score: "10", comments: "1 comment" },
       ],
     };
-    const fetchSubreddit = vi.fn(async (_t: string, sub: string) => bySub[sub] ?? []);
+    const run = vi.fn(async () => raw);
 
-    const candidates = await crawlReddit(
-      { token: "T", userAgent: "ua", subreddits: ["wallstreetbets", "shortsqueeze"], listing: "hot", limit: 25 },
-      { fetchSubreddit },
-    );
+    const candidates = await crawlReddit({ subreddits: ["wallstreetbets", "shortsqueeze"] }, { run });
 
-    expect(fetchSubreddit).toHaveBeenCalledTimes(2);
+    expect(run).toHaveBeenCalledWith(["wallstreetbets", "shortsqueeze"]);
     expect(candidates[0]).toEqual({ ticker: "KSS", mentions: 2, score: 80 });
     expect(candidates.find((c) => c.ticker === "BBBY")).toEqual({ ticker: "BBBY", mentions: 1, score: 10 });
   });
 
-  it("skips a subreddit that errors without failing the whole crawl", async () => {
-    const fetchSubreddit = vi.fn(async (_t: string, sub: string) => {
-      if (sub === "broken") throw new Error("429");
-      return [{ title: "$GME", selftext: "", score: 5, numComments: 1 }] as RedditPost[];
-    });
-    const candidates = await crawlReddit(
-      { token: "T", userAgent: "ua", subreddits: ["broken", "wallstreetbets"], listing: "hot", limit: 25 },
-      { fetchSubreddit },
-    );
+  it("treats a missing subreddit key as empty", async () => {
+    const run = vi.fn(async () => ({ wallstreetbets: [{ title: "$GME", score: "5", comments: "1 comment" }] }));
+    const candidates = await crawlReddit({ subreddits: ["wallstreetbets", "absent"] }, { run });
     expect(candidates).toEqual([{ ticker: "GME", mentions: 1, score: 5 }]);
   });
 });
@@ -511,7 +503,7 @@ describe("crawlReddit", () => {
 
 ```ts
 // src/reddit/crawl.ts
-import type { RedditListing, RedditPost } from "./client";
+import { toPosts, type CrawlRunner } from "./agentBrowser";
 import { tallyTickers, type TickerStat } from "./tickers";
 
 export interface RedditCandidate {
@@ -521,42 +513,27 @@ export interface RedditCandidate {
 }
 
 export interface CrawlOptions {
-  token: string;
-  userAgent: string;
   subreddits: string[];
-  listing: RedditListing;
-  limit: number;
 }
 
 export interface CrawlDeps {
-  fetchSubreddit: (
-    token: string,
-    subreddit: string,
-    listing: RedditListing,
-    limit: number,
-    userAgent: string,
-  ) => Promise<RedditPost[]>;
+  run: CrawlRunner;
 }
 
 /**
- * Fetch each subreddit, tally tickers across all of them, and return candidates
- * sorted by mentions (desc) then score (desc). A subreddit that errors is
- * skipped (logged) rather than aborting the whole crawl.
+ * Run the crawl (agent-browser under the hood), normalise each subreddit's
+ * posts, tally tickers across all of them, and return candidates sorted by
+ * mentions (desc) then score (desc). Per-subreddit errors are already swallowed
+ * inside the runner (it returns [] for a failed sub).
  */
 export async function crawlReddit(
   options: CrawlOptions,
   deps: CrawlDeps,
 ): Promise<RedditCandidate[]> {
+  const bySub = await deps.run(options.subreddits);
   const merged = new Map<string, TickerStat>();
   for (const sub of options.subreddits) {
-    let posts: RedditPost[];
-    try {
-      posts = await deps.fetchSubreddit(options.token, sub, options.listing, options.limit, options.userAgent);
-    } catch (err) {
-      console.error(`[reddit] skipping r/${sub}: ${err instanceof Error ? err.message : String(err)}`);
-      continue;
-    }
-    for (const [ticker, stat] of tallyTickers(posts)) {
+    for (const [ticker, stat] of tallyTickers(toPosts(bySub[sub] ?? []))) {
       const prev = merged.get(ticker) ?? { mentions: 0, score: 0 };
       merged.set(ticker, { mentions: prev.mentions + stat.mentions, score: prev.score + stat.score });
     }
@@ -573,12 +550,12 @@ export async function crawlReddit(
 
 ```bash
 git add src/reddit/crawl.ts src/reddit/crawl.test.ts
-git commit -m "feat: reddit crawl orchestrator with per-sub error tolerance"
+git commit -m "feat: reddit crawl orchestrator over agent-browser runner"
 ```
 
 ---
 
-## Task 6: Off-radar diff
+## Task 5: Off-radar diff
 
 **Files:** Create `src/scan/offradar.ts`; Test `src/scan/offradar.test.ts`
 
@@ -591,16 +568,15 @@ import { offRadar } from "./offradar";
 import type { RedditCandidate } from "../reddit/crawl";
 
 const candidates: RedditCandidate[] = [
-  { ticker: "GME", mentions: 9, score: 900 }, // already in apewisdom -> excluded
-  { ticker: "KSS", mentions: 4, score: 300 }, // off-radar, above threshold
-  { ticker: "BBBY", mentions: 1, score: 10 }, // below threshold -> excluded
+  { ticker: "GME", mentions: 9, score: 900 },
+  { ticker: "KSS", mentions: 4, score: 300 },
+  { ticker: "BBBY", mentions: 1, score: 10 },
 ];
 
 describe("offRadar", () => {
   it("keeps reddit candidates not in apewisdom and above the mention threshold", () => {
     const known = new Set(["GME", "TSLA"]);
-    const out = offRadar(candidates, known, { minMentions: 2, limit: 10 });
-    expect(out.map((c) => c.ticker)).toEqual(["KSS"]);
+    expect(offRadar(candidates, known, { minMentions: 2, limit: 10 }).map((c) => c.ticker)).toEqual(["KSS"]);
   });
 
   it("applies the limit", () => {
@@ -654,11 +630,11 @@ git commit -m "feat: off-radar diff (reddit minus apewisdom)"
 
 ---
 
-## Task 7: Earnings-today helper (Finnhub) + barrel export
+## Task 6: Earnings-today helper (Finnhub) + barrel export
 
 **Files:** Modify `src/core/ape-intel.ts`; Create `src/scan/earnings.ts`; Test `src/scan/earnings.test.ts`
 
-- [ ] **Step 1: Extend the barrel** (add to `src/core/ape-intel.ts`)
+- [ ] **Step 1: Extend the barrel** (append to `src/core/ape-intel.ts`)
 
 ```ts
 // append to src/core/ape-intel.ts
@@ -683,10 +659,9 @@ describe("fetchEarningsToday", () => {
     const now = new Date(`${today}T08:00:00Z`).getTime();
     const fetchEarnings = vi.fn(async (ticker: string) => {
       if (ticker === "AAPL") return { date: today, epsEstimate: 1.2 };
-      if (ticker === "TSLA") return { date: "2026-07-01", epsEstimate: null }; // future, not today
-      return null; // GME none
+      if (ticker === "TSLA") return { date: "2026-07-01", epsEstimate: null };
+      return null;
     });
-
     const out = await fetchEarningsToday(["AAPL", "TSLA", "GME"], { fetchEarnings, now });
     expect(out).toEqual([{ ticker: "AAPL", date: today, epsEstimate: 1.2 }]);
   });
@@ -748,7 +723,7 @@ export async function fetchEarningsToday(
 }
 ```
 
-- [ ] **Step 5: Run, expect PASS**, then typecheck `npx tsc --noEmit` (verifies the barrel addition resolves). Commit.
+- [ ] **Step 5: Run, expect PASS**, then `npx tsc --noEmit`. Commit.
 
 ```bash
 git add src/core/ape-intel.ts src/scan/earnings.ts src/scan/earnings.test.ts
@@ -757,7 +732,7 @@ git commit -m "feat: finnhub earnings-today helper + barrel export"
 
 ---
 
-## Task 8: Format Off-Radar + Earnings sections
+## Task 7: Format Off-Radar + Earnings sections
 
 **Files:** Modify `src/scan/format.ts`; Modify `src/scan/format.test.ts`
 
@@ -770,7 +745,7 @@ import type { EarningsRow } from "./earnings";
 describe("formatReport off-radar + earnings", () => {
   const allRows: TrendingRow[] = [
     { ticker: "GME", rank: 1, mentions: 500, mentions24hAgo: 600 },
-    { ticker: "KSS", rank: 16, mentions: 4, mentions24hAgo: 4 }, // off-radar (mapped) row
+    { ticker: "KSS", rank: 16, mentions: 4, mentions24hAgo: 4 },
   ];
   const ch: TrendingChallenge = {
     summary: "s",
@@ -783,7 +758,6 @@ describe("formatReport off-radar + earnings", () => {
   it("renders an Off-Radar section for reddit-origin tickers", () => {
     const out = formatReport(allRows, ch, { label: "Morning", offRadarTickers: ["KSS"] });
     expect(out).toContain("Off-Radar");
-    // KSS line appears under off-radar, GME under the main section
     const offIdx = out.indexOf("Off-Radar");
     expect(out.indexOf("KSS")).toBeGreaterThan(offIdx);
     expect(out.indexOf("GME")).toBeLessThan(offIdx);
@@ -879,7 +853,7 @@ export function formatReport(
 }
 ```
 
-- [ ] **Step 4: Run, expect PASS** — `npx vitest run src/scan/format.test.ts` (old + new tests).
+- [ ] **Step 4: Run, expect PASS** — old + new format tests.
 
 - [ ] **Step 5: Commit**
 
@@ -890,11 +864,11 @@ git commit -m "feat: report off-radar + earnings-today sections"
 
 ---
 
-## Task 9: Wire reddit + earnings into the pipeline
+## Task 8: Wire reddit + earnings into the pipeline
 
 **Files:** Modify `src/scan/pipeline.ts`; Modify `src/scan/pipeline.test.ts`
 
-- [ ] **Step 1: Add failing test** (append to `src/scan/pipeline.test.ts`)
+- [ ] **Step 1: Add failing tests** (append to `src/scan/pipeline.test.ts`)
 
 ```ts
 // add to src/scan/pipeline.test.ts
@@ -920,11 +894,27 @@ describe("runScan with reddit + earnings", () => {
       { fetchSnapshot, claudeRunner, send, crawlReddit, fetchEarningsToday },
     );
 
-    // KSS (off-radar) must be in the prompt handed to claude
     expect(claudeRunner.mock.calls[0][0]).toContain("KSS");
     const msg = send.mock.calls[0][0] as string;
     expect(msg).toContain("Off-Radar");
     expect(msg).toContain("KSS");
+  });
+
+  it("still sends a report if the reddit crawl throws", async () => {
+    const fetchSnapshot = vi.fn(async () =>
+      new Map([["GME", { rank: 1, mentions: 500, mentions24hAgo: 600 }]]) as ApewisdomSnapshot,
+    );
+    const crawlReddit = vi.fn(async (): Promise<RedditCandidate[]> => {
+      throw new Error("agent-browser down");
+    });
+    const claudeRunner = vi.fn(async () =>
+      '```json\n{"summary":"x","verdicts":[{"ticker":"GME","verdict":"noise"}]}\n```',
+    );
+    const send = vi.fn(async () => {});
+
+    await runScan({ label: "Morning", limit: 10 }, { fetchSnapshot, claudeRunner, send, crawlReddit });
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(send.mock.calls[0][0]).toContain("GME");
   });
 
   it("works exactly like Plan 1 when reddit + earnings deps are omitted", async () => {
@@ -976,9 +966,10 @@ export interface ScanDeps {
 /**
  * One scan run: fetch Apewisdom trending → (optionally) crawl reddit for
  * off-radar candidates → challenge the COMBINED list via one Claude call →
- * (optionally) attach today's earnings → format (splitting off-radar into its
- * own section) → send. Reddit/earnings are optional; without them this behaves
- * exactly like Plan 1.
+ * (optionally) attach today's earnings → format (off-radar in its own section)
+ * → send. Reddit/earnings are optional; a reddit-crawl failure is logged and
+ * the scan continues without off-radar. Without the deps this behaves exactly
+ * like Plan 1.
  */
 export async function runScan(
   options: ScanOptions,
@@ -988,21 +979,23 @@ export async function runScan(
   const rows = snapshotToRows(snapshot, options.limit);
   const knownTickers = new Set(snapshot.keys());
 
-  // Off-radar reddit candidates → TrendingRow-shaped entries appended after the
-  // apewisdom rows, so the existing challenge prompt covers them too.
   let offRadarRows: TrendingRow[] = [];
   if (deps.crawlReddit) {
-    const candidates = await deps.crawlReddit();
-    const picked = offRadar(candidates, knownTickers, {
-      minMentions: options.offRadarMinMentions ?? 2,
-      limit: options.offRadarLimit ?? 5,
-    });
-    offRadarRows = picked.map((c, i) => ({
-      ticker: c.ticker,
-      rank: rows.length + i + 1,
-      mentions: c.mentions,
-      mentions24hAgo: c.mentions, // reddit has no 24h delta → flat
-    }));
+    try {
+      const candidates = await deps.crawlReddit();
+      const picked = offRadar(candidates, knownTickers, {
+        minMentions: options.offRadarMinMentions ?? 2,
+        limit: options.offRadarLimit ?? 5,
+      });
+      offRadarRows = picked.map((c, i) => ({
+        ticker: c.ticker,
+        rank: rows.length + i + 1,
+        mentions: c.mentions,
+        mentions24hAgo: c.mentions, // reddit has no 24h delta → flat
+      }));
+    } catch (err) {
+      console.error(`[scan] reddit crawl failed, continuing without off-radar: ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
 
   const combined = [...rows, ...offRadarRows];
@@ -1025,18 +1018,18 @@ export async function runScan(
 }
 ```
 
-- [ ] **Step 4: Run, expect PASS** — `npx vitest run src/scan/pipeline.test.ts` (old Plan 1 tests + new ones), then full suite `npx vitest run` + `npx tsc --noEmit`.
+- [ ] **Step 4: Run, expect PASS** — pipeline tests (old + new), then full suite `npx vitest run` + `npx tsc --noEmit`.
 
 - [ ] **Step 5: Commit**
 
 ```bash
 git add src/scan/pipeline.ts src/scan/pipeline.test.ts
-git commit -m "feat: pipeline integrates reddit off-radar + earnings (optional deps)"
+git commit -m "feat: pipeline integrates reddit off-radar + earnings (resilient, optional)"
 ```
 
 ---
 
-## Task 10: Entry wiring + manual run
+## Task 9: Entry wiring + manual run
 
 **Files:** Modify `src/scan/index.ts`
 
@@ -1044,22 +1037,20 @@ git commit -m "feat: pipeline integrates reddit off-radar + earnings (optional d
 
 ```ts
 // src/scan/index.ts
-import { loadEnv, requireReddit, requireFinnhub } from "../config/env";
+import { loadEnv, requireFinnhub } from "../config/env";
 import { fetchApewisdomSnapshot, fetchNextEarnings } from "../core/ape-intel";
 import { createTelegramClient } from "../telegram/client";
 import { spawnClaudeRunner } from "../claude/invoke";
 import { runScan, type ScanDeps } from "./pipeline";
-import { fetchRedditToken } from "../reddit/auth";
-import { fetchSubreddit } from "../reddit/client";
+import { spawnAgentBrowser } from "../reddit/agentBrowser";
 import { crawlReddit, type RedditCandidate } from "../reddit/crawl";
 import { fetchEarningsToday } from "./earnings";
 
 const LABEL = process.argv[2] ?? "Scan";
 const LIMIT = Number(process.env.SCAN_LIMIT ?? "15");
 const SUBREDDITS = (process.env.REDDIT_SUBREDDITS ?? "wallstreetbets,wallstreetbetsGER,shortsqueeze")
-  .split(",")
-  .map((s) => s.trim())
-  .filter(Boolean);
+  .split(",").map((s) => s.trim()).filter(Boolean);
+const AGENT_BROWSER_BIN = process.env.AGENT_BROWSER_BIN ?? "agent-browser";
 
 async function main(): Promise<void> {
   if (!Number.isFinite(LIMIT) || LIMIT <= 0) {
@@ -1077,19 +1068,14 @@ async function main(): Promise<void> {
     send: (text) => telegram.sendMessage(text),
   };
 
-  // Reddit off-radar is opt-in: only wired when creds are present.
-  if (env.redditClientId) {
-    const creds = requireReddit(env);
-    deps.crawlReddit = async (): Promise<RedditCandidate[]> => {
-      const token = await fetchRedditToken(creds);
-      return crawlReddit(
-        { token, userAgent: creds.userAgent, subreddits: SUBREDDITS, listing: "hot", limit: 50 },
-        { fetchSubreddit },
-      );
-    };
+  // Reddit off-radar via agent-browser: opt-in (ENABLE_REDDIT_CRAWL).
+  if (env.redditCrawlEnabled) {
+    const run = spawnAgentBrowser({ bin: AGENT_BROWSER_BIN, session: "ape-signal" });
+    deps.crawlReddit = (): Promise<RedditCandidate[]> =>
+      crawlReddit({ subreddits: SUBREDDITS }, { run });
   }
 
-  // Earnings is opt-in: only wired when the Finnhub key is present.
+  // Earnings: opt-in (presence of FINNHUB_API_KEY).
   if (env.finnhubApiKey) {
     const key = requireFinnhub(env);
     deps.fetchEarningsToday = (tickers) =>
@@ -1113,18 +1099,26 @@ main().catch((err) => {
 
 - [ ] **Step 3: Full suite** — `npx vitest run` → all PASS.
 
-- [ ] **Step 4: Manual smoke test** (requires `.env` with reddit + finnhub creds + `claude login`):
+- [ ] **Step 4: Manual smoke test** (needs `.env` with `ENABLE_REDDIT_CRAWL=1`, `FINNHUB_API_KEY`, telegram creds; plus `npm i -g agent-browser && agent-browser install` and `claude login`):
 
+First confirm agent-browser extracts posts:
+```bash
+agent-browser --session ape-signal open https://old.reddit.com/r/wallstreetbets/hot/
+agent-browser --session ape-signal eval "JSON.stringify(Array.from(document.querySelectorAll('div.thing')).slice(0,3).map(t=>({title:t.querySelector('a.title')&&t.querySelector('a.title').innerText})))"
+```
+Expected: a small JSON array of post titles. Then the full scan:
 ```bash
 node --env-file=.env --import tsx src/scan/index.ts Morning
 ```
-Expected: a report arrives in Telegram including a "🔥 Reddit Off-Radar" section (if reddit surfaced new tickers) and "📅 Earnings today" (if any). Console prints `[scan] Morning report sent.`
+Expected: a Telegram report including a "🔥 Reddit Off-Radar" section (if reddit surfaced new tickers) and "📅 Earnings today" (if any). Console prints `[scan] Morning report sent.`
+
+If agent-browser is not installed yet, leave `ENABLE_REDDIT_CRAWL` empty — the scan runs Plan-1-style and still delivers.
 
 - [ ] **Step 5: Commit**
 
 ```bash
 git add src/scan/index.ts
-git commit -m "feat: wire reddit off-radar + finnhub earnings into scan entry"
+git commit -m "feat: wire agent-browser reddit off-radar + finnhub earnings into scan entry"
 ```
 
 ---
@@ -1132,19 +1126,19 @@ git commit -m "feat: wire reddit off-radar + finnhub earnings into scan entry"
 ## Self-Review
 
 **Spec coverage:**
-- §E1 Reddit OAuth → Task 2. ✓
-- §E2 fetch wallstreetbets/wallstreetbetsGER/shortsqueeze (configurable via `REDDIT_SUBREDDITS`) → Tasks 3 + 10. ✓
-- §E3 ticker extraction + tally → Task 4. ✓
-- §E4 diff vs Apewisdom ("off-radar") → Task 6, integrated Task 9. ✓
-- Off-radar tickers challenged by Claude → Task 9 (merged into the single challenge). ✓
-- §C3 Finnhub earnings-today → Tasks 7 + 9 + 10. ✓
-- Report sections → Task 8. ✓
-- Backward compatibility (no creds → Plan 1 behaviour) → Task 9 second test + Task 10 opt-in wiring. ✓
+- §E Reddit crawl (now via agent-browser) of wallstreetbets/wallstreetbetsGER/shortsqueeze, configurable via `REDDIT_SUBREDDITS` → Tasks 2 + 4 + 9. ✓
+- Ticker extraction + tally → Task 3. ✓
+- Diff vs Apewisdom ("off-radar"), challenged by Claude → Tasks 5 + 8. ✓
+- §C3 Finnhub earnings-today → Tasks 6 + 8 + 9. ✓
+- Report sections → Task 7. ✓
+- Resilience (crawl failure → scan still delivers) → Task 8. ✓
+- Backward compatibility (crawl disabled → Plan 1 behaviour) → Task 8 third test + Task 9 opt-in. ✓
 
-**Deferred (not this plan):** Catalyst NEWS body in the challenge context (only earnings dates are wired here; `fetchCompanyNews` exists for a later increment); Tradestie/StockTwits sentiment columns (§C2); the Telegram listener / `/strategie` (Plan 3); systemd (Plan 4).
+**Deferred (not this plan):** catalyst NEWS body in the challenge context (`fetchCompanyNews` exists for later); Tradestie/StockTwits sentiment columns; Telegram listener / `/strategie` (Plan 3); systemd (Plan 4); ticker validation against a real symbol list (noise refinement).
 
-**Placeholder scan:** none — every code step has complete code + exact commands.
+**Placeholder scan:** none — every code step has complete code + exact commands. The `spawnAgentBrowser` runner is validated by Task 9's manual run (same policy as the `claude -p` spawn path); its pure helpers are unit-tested.
 
-**Type consistency:** `RedditCandidate { ticker, mentions, score }`, `RedditPost { title, selftext, score, numComments }`, `TickerStat { mentions, score }`, `EarningsRow { ticker, date, epsEstimate }`, `RedditCreds { clientId, clientSecret, userAgent }` are used identically across auth/client/tickers/crawl/offradar/earnings/format/pipeline/index. `runScan(options, deps)` with optional `crawlReddit`/`fetchEarningsToday` matches all call sites. `fetchSubreddit` signature `(token, subreddit, listing, limit, userAgent, fetchFn?)` matches the `CrawlDeps.fetchSubreddit` shape (the 5-arg form; the crawl never passes `fetchFn`, so the real `fetchSubreddit`'s default `fetch` is used).
+**Type consistency:** `RawRedditPost`, `RedditPost`, `CrawlRunner`, `AgentBrowserConfig` (agentBrowser.ts); `TickerStat` (tickers.ts); `RedditCandidate` (crawl.ts); `EarningsRow` (earnings.ts) are used identically across modules. `crawlReddit(options, { run })` and the `ScanDeps.crawlReddit?: () => Promise<RedditCandidate[]>` shape match the entry wiring. `parseScore`/`toPosts`/`parseEvalJson` signatures match their tests.
 
-**Noise-tuning note (open):** bare-uppercase ticker extraction can yield false positives; the `STOPWORDS` set + `offRadarMinMentions` threshold are the first defense. Finnhub-symbol validation of candidates is a candidate refinement for a later increment if noise proves high in real runs.
+**agent-browser version note (open):** the CLI flags (`--session`, `open`, `eval`) target the current agent-browser; if a flag differs in the installed version, adjust `spawnAgentBrowser`/`EXTRACT_JS` only — the Node contract (`Record<sub, RawRedditPost[]>`) is the stable boundary. The `eval` stdout shape is handled defensively by `parseEvalJson` (raw array, double-encoded string, `{result}` wrapper, or embedded-in-noise).
+```
