@@ -3,16 +3,19 @@
     "target": "ES2022",
     "module": "ESNext",
     "moduleResolution": "Bundler",
-    "lib": ["ES2023"],
+    // DOM is included because the ape-intel submodule lib was authored for the
+    // browser (uses RequestInfo, Window, fetch, …); we type-resolve against it.
+    "lib": ["ES2023", "DOM"],
     "types": ["node"],
     "strict": true,
-    "noUncheckedIndexedAccess": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
     "resolveJsonModule": true,
     "noEmit": true,
     "forceConsistentCasingInFileNames": true
   },
-  "include": ["src", "vendor/ape-intel/src/lib"],
-  "exclude": ["node_modules", "vendor/ape-intel/node_modules", "**/*.test.ts"]
+  // Only our own source is a compilation root. Submodule files are pulled in
+  // on-demand for types when imported, but vendor/ is never a root we own.
+  "include": ["src"],
+  "exclude": ["node_modules", "vendor/ape-intel/node_modules", "dist", "**/*.test.ts"]
 }
