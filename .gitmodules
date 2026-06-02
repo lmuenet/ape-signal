@@ -1,0 +1,3 @@
+[submodule "vendor/ape-intel"]
+	path = vendor/ape-intel
+	url = https://github.com/lmuenet/ape-intel.git

@@ -1,0 +1,23 @@
+# dependencies
+node_modules/
+
+# build / runtime output
+dist/
+*.tsbuildinfo
+
+# secrets & local config — NEVER commit
+.env
+.env.*
+!.env.example
+*.local
+
+# runtime data / logs (snapshots, reports, journals)
+data/
+logs/
+*.log
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
