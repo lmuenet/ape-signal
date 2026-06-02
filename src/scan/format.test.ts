@@ -34,6 +34,12 @@ describe("formatReport", () => {
     expect(out.toLowerCase()).toContain("not financial advice");
   });
 
+  it("separates each stock with a blank line", () => {
+    const out = formatReport(rows, challenge, { label: "Morning" });
+    // a blank line must sit between the GME block and the TSLA block
+    expect(out).toMatch(/stale meme pump\n\n✅ TSLA/);
+  });
+
   it("falls back to the trending list when there are no verdicts", () => {
     const out = formatReport(rows, { summary: "", verdicts: [] }, { label: "Morning" });
     expect(out).toContain("GME");
