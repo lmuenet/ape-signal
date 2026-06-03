@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { formatReport } from "./format";
 import type { TrendingRow, TrendingChallenge } from "../core/ape-intel";
+import type { EarningsRow } from "./earnings";
 
 const rows: TrendingRow[] = [
   { ticker: "GME", rank: 1, mentions: 500, mentions24hAgo: 600 },
@@ -45,5 +46,35 @@ describe("formatReport", () => {
     expect(out).toContain("GME");
     expect(out).toContain("TSLA");
     expect(out).toContain("no challenge");
+  });
+});
+
+describe("formatReport off-radar + earnings", () => {
+  const allRows: TrendingRow[] = [
+    { ticker: "GME", rank: 1, mentions: 500, mentions24hAgo: 600 },
+    { ticker: "KSS", rank: 16, mentions: 4, mentions24hAgo: 4 },
+  ];
+  const ch: TrendingChallenge = {
+    summary: "s",
+    verdicts: [
+      { ticker: "GME", verdict: "noise", thesis: "meme" },
+      { ticker: "KSS", verdict: "watch", thesis: "low-float squeeze setup" },
+    ],
+  };
+
+  it("renders an Off-Radar section for reddit-origin tickers", () => {
+    const out = formatReport(allRows, ch, { label: "Morning", offRadarTickers: ["KSS"] });
+    expect(out).toContain("Off-Radar");
+    const offIdx = out.indexOf("Off-Radar");
+    expect(out.indexOf("KSS")).toBeGreaterThan(offIdx);
+    expect(out.indexOf("GME")).toBeLessThan(offIdx);
+  });
+
+  it("renders an Earnings today section when provided", () => {
+    const earnings: EarningsRow[] = [{ ticker: "GME", date: "2026-06-02", epsEstimate: 0.1 }];
+    const out = formatReport(allRows, ch, { label: "Morning", earningsToday: earnings });
+    expect(out).toContain("Earnings today");
+    expect(out).toContain("GME");
+    expect(out).toContain("0.1");
   });
 });
