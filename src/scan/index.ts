@@ -1,10 +1,10 @@
 // src/scan/index.ts
-import { loadEnv, requireFinnhub } from "../config/env";
+import { loadEnv, requireFinnhub, requireRedditApi } from "../config/env";
 import { fetchApewisdomSnapshot, fetchNextEarnings } from "../core/ape-intel";
 import { createTelegramClient } from "../telegram/client";
 import { spawnClaudeRunner } from "../claude/invoke";
 import { runScan, type ScanDeps } from "./pipeline";
-import { spawnAgentBrowser } from "../reddit/agentBrowser";
+import { createRedditApiRunner } from "../reddit/redditApi";
 import { crawlReddit, type RedditCandidate } from "../reddit/crawl";
 import { fetchEarningsToday } from "./earnings";
 
@@ -12,7 +12,6 @@ const LABEL = process.argv[2] ?? "Scan";
 const LIMIT = Number(process.env.SCAN_LIMIT ?? "15");
 const SUBREDDITS = (process.env.REDDIT_SUBREDDITS ?? "wallstreetbets,wallstreetbetsGER,shortsqueeze")
   .split(",").map((s) => s.trim()).filter(Boolean);
-const AGENT_BROWSER_BIN = process.env.AGENT_BROWSER_BIN ?? "agent-browser";
 
 async function main(): Promise<void> {
   if (!Number.isFinite(LIMIT) || LIMIT <= 0) {
@@ -30,9 +29,13 @@ async function main(): Promise<void> {
     send: (text) => telegram.sendMessage(text),
   };
 
-  // Reddit off-radar via agent-browser: opt-in (ENABLE_REDDIT_CRAWL).
+  // Reddit off-radar via the Reddit OAuth API: opt-in (ENABLE_REDDIT_CRAWL).
+  // Uses application-only OAuth so it works from datacenter IPs (old.reddit.com
+  // scraping is IP-blocked on the VPS).
   if (env.redditCrawlEnabled) {
-    const run = spawnAgentBrowser({ bin: AGENT_BROWSER_BIN, session: "ape-signal" });
+    const { clientId, clientSecret } = requireRedditApi(env);
+    const userAgent = env.redditUserAgent ?? "ape-signal/0.1 (off-radar scan)";
+    const run = createRedditApiRunner({ clientId, clientSecret, userAgent }, { fetchFn: fetch });
     deps.crawlReddit = (): Promise<RedditCandidate[]> =>
       crawlReddit({ subreddits: SUBREDDITS }, { run });
   }
