@@ -28,3 +28,10 @@ export type {
 export type {
   TrendingRow,
 } from "../../vendor/ape-intel/src/background/apewisdom-service";
+
+export {
+  fetchNextEarnings,
+} from "../../vendor/ape-intel/src/lib/finnhub";
+export type {
+  EarningsDate,
+} from "../../vendor/ape-intel/src/lib/finnhub";
