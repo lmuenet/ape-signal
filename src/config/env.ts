@@ -4,6 +4,9 @@ export interface Env {
   telegramChatId: string;
   finnhubApiKey?: string;
   redditCrawlEnabled: boolean;
+  redditClientId?: string;
+  redditClientSecret?: string;
+  redditUserAgent?: string;
 }
 
 const REQUIRED = ["TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID"] as const;
@@ -34,6 +37,9 @@ export function loadEnv(source: Record<string, string | undefined> = process.env
     telegramChatId: source.TELEGRAM_CHAT_ID!,
     finnhubApiKey: val(source, "FINNHUB_API_KEY"),
     redditCrawlEnabled: truthy(source.ENABLE_REDDIT_CRAWL),
+    redditClientId: val(source, "REDDIT_CLIENT_ID"),
+    redditClientSecret: val(source, "REDDIT_CLIENT_SECRET"),
+    redditUserAgent: val(source, "REDDIT_USER_AGENT"),
   };
 }
 
@@ -41,4 +47,14 @@ export function loadEnv(source: Record<string, string | undefined> = process.env
 export function requireFinnhub(env: Env): string {
   if (!env.finnhubApiKey) throw new Error("Missing finnhub environment variable: FINNHUB_API_KEY");
   return env.finnhubApiKey;
+}
+
+/** Throw unless both Reddit OAuth credentials are present; returns them. */
+export function requireRedditApi(env: Env): { clientId: string; clientSecret: string } {
+  if (!env.redditClientId || !env.redditClientSecret) {
+    throw new Error(
+      "Missing reddit environment variables: REDDIT_CLIENT_ID, REDDIT_CLIENT_SECRET",
+    );
+  }
+  return { clientId: env.redditClientId, clientSecret: env.redditClientSecret };
 }

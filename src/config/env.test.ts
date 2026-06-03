@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { loadEnv, requireFinnhub } from "./env";
+import { loadEnv, requireFinnhub, requireRedditApi } from "./env";
 
 describe("loadEnv", () => {
   it("returns the config when required vars are present", () => {
@@ -36,5 +36,32 @@ describe("optional finnhub + reddit-crawl flag", () => {
   it("requireFinnhub throws when key missing", () => {
     const cfg = loadEnv({ TELEGRAM_BOT_TOKEN: "t", TELEGRAM_CHAT_ID: "c" });
     expect(() => requireFinnhub(cfg)).toThrow(/FINNHUB_API_KEY/);
+  });
+});
+
+describe("reddit OAuth credentials", () => {
+  it("passes through reddit client id/secret/user-agent", () => {
+    const cfg = loadEnv({
+      TELEGRAM_BOT_TOKEN: "t", TELEGRAM_CHAT_ID: "c",
+      REDDIT_CLIENT_ID: "cid", REDDIT_CLIENT_SECRET: "csec", REDDIT_USER_AGENT: "ua",
+    });
+    expect(cfg.redditClientId).toBe("cid");
+    expect(cfg.redditClientSecret).toBe("csec");
+    expect(cfg.redditUserAgent).toBe("ua");
+  });
+
+  it("requireRedditApi returns creds when present", () => {
+    const cfg = loadEnv({
+      TELEGRAM_BOT_TOKEN: "t", TELEGRAM_CHAT_ID: "c",
+      REDDIT_CLIENT_ID: "cid", REDDIT_CLIENT_SECRET: "csec",
+    });
+    expect(requireRedditApi(cfg)).toEqual({ clientId: "cid", clientSecret: "csec" });
+  });
+
+  it("requireRedditApi throws when either credential is missing", () => {
+    const cfg = loadEnv({
+      TELEGRAM_BOT_TOKEN: "t", TELEGRAM_CHAT_ID: "c", REDDIT_CLIENT_ID: "cid",
+    });
+    expect(() => requireRedditApi(cfg)).toThrow(/REDDIT_CLIENT_ID, REDDIT_CLIENT_SECRET/);
   });
 });
