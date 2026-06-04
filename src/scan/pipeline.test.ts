@@ -52,6 +52,8 @@ describe("runScan", () => {
     expect(seen).toContain("DEUTSCH");
     expect(seen).toContain("signal | noise | watch");
     expect(seen).toContain("KEINE Tools");
+    // no fetchTrend dep here → no price block in the prompt
+    expect(seen).not.toContain("Kurse & Trend");
   });
 
   it("appends a TradingView price + trend block when fetchTrend is provided", async () => {
