@@ -39,6 +39,10 @@ export async function fetchTradingViewTrend(
   if (tickers.length === 0) return out;
 
   const body = {
+    // TradingView's scanner uses operation "in_range" on the "name" field as a
+    // SET membership test ("name is one of [...]"), not a numeric between-bounds
+    // check — this is the documented way to fetch a specific bare-ticker list in
+    // one call (verified against the live endpoint). Avoids exchange-prefix guessing.
     filter: [{ left: "name", operation: "in_range", right: tickers.map((t) => t.toUpperCase()) }],
     columns: ["name", "close", "change", "Perf.W", "Perf.1M", "Perf.3M"],
     range: [0, Math.max(tickers.length * 2, 60)],

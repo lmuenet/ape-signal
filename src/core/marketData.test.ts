@@ -26,6 +26,9 @@ describe("fetchTradingViewTrend", () => {
     // request is a filter-by-name POST with upper-cased tickers + the perf columns
     expect(sentBody).toContain("Perf.W");
     expect(sentBody).toContain("\"AVGO\"");
+    // guard the exact filter structure so a silent API-shape regression is caught
+    expect(sentBody).toContain("\"left\":\"name\"");
+    expect(sentBody).toContain("\"in_range\"");
   });
 
   it("returns an empty map WITHOUT calling fetch when no tickers are given", async () => {
