@@ -1,0 +1,14 @@
+[Unit]
+Description=Ape Signal Telegram listener
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+WorkingDirectory=/opt/ape-signal
+EnvironmentFile=/etc/ape-signal.env
+ExecStart=/usr/bin/npx tsx src/telegram/listener.ts
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,10 @@
+[Unit]
+Description=Ape Signal scan (%i)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/ape-signal
+EnvironmentFile=/etc/ape-signal.env
+ExecStart=/usr/bin/npx tsx src/scan/index.ts %i
