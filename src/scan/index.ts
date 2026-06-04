@@ -54,7 +54,22 @@ async function main(): Promise<void> {
   console.log(`[scan] ${LABEL} report sent.`);
 }
 
-main().catch((err) => {
+main().catch(async (err) => {
+  const message = err instanceof Error ? err.message : String(err);
   console.error("[scan] failed:", err);
   process.exitCode = 1;
+  // Best-effort failure alert so a dead claude token / API never fails silently.
+  try {
+    const token = process.env.TELEGRAM_BOT_TOKEN;
+    const chatId = process.env.TELEGRAM_CHAT_ID;
+    if (token && chatId) {
+      await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chat_id: chatId, text: `⚠️ Scan (${LABEL}) fehlgeschlagen: ${message}` }),
+      });
+    }
+  } catch (alertErr) {
+    console.error("[scan] failed to send failure alert:", alertErr);
+  }
 });
