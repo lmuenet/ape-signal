@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { assembleStrategyInput, type StrategyDeps } from "./strategy";
+import { assembleStrategyInput, runStrategy, type StrategyDeps } from "./strategy";
 import type { ApewisdomSnapshot, TradestieSnapshot } from "../core/ape-intel";
 
 function deps(over: Partial<StrategyDeps> = {}): StrategyDeps {
@@ -15,6 +15,7 @@ function deps(over: Partial<StrategyDeps> = {}): StrategyDeps {
     fetchTradestie: async () => td,
     fetchNews: async () => [],
     fetchEarnings: async () => null,
+    fetchQuote: async () => ({ current: 1234.5, changePct: 1.65, high: 1240, low: 1210, open: 1215, prevClose: 1214.5 }),
     claudeRunner: async () => "",
     ...over,
   };
@@ -59,6 +60,7 @@ describe("assembleStrategyInput", () => {
       fetchTradestie: boom,
       fetchNews: boom,
       fetchEarnings: boom,
+      fetchQuote: boom,
       claudeRunner: async () => "",
     });
     expect(input.ticker).toBe("TSLA");
@@ -69,7 +71,7 @@ describe("assembleStrategyInput", () => {
   });
 });
 
-import { runStrategy, DEFAULT_PROFILE_EXPORT } from "./strategy";
+import { DEFAULT_PROFILE_EXPORT } from "./strategy";
 
 describe("runStrategy", () => {
   it("builds the export prompt, runs claude, and parses the JSON block", async () => {
@@ -96,6 +98,28 @@ describe("runStrategy", () => {
 });
 
 import { formatStrategy } from "./strategy";
+
+describe("runStrategy price + language", () => {
+  it("includes a live-price block plus German + headless directives in the prompt", async () => {
+    let seen = "";
+    await runStrategy("avgo", { risk: "balanced", horizon: "swing" }, deps({
+      claudeRunner: async (p) => { seen = p; return ""; },
+    }));
+    expect(seen).toContain("Aktueller Kurs");
+    expect(seen).toContain("1234.5");
+    expect(seen).toContain("DEUTSCH");
+    expect(seen).toContain("KEINE Tools");
+  });
+
+  it("notes 'Kein Live-Kurs' when the quote source fails", async () => {
+    let seen = "";
+    await runStrategy("avgo", { risk: "balanced", horizon: "swing" }, deps({
+      fetchQuote: async () => { throw new Error("Finnhub quote returned 429"); },
+      claudeRunner: async (p) => { seen = p; return ""; },
+    }));
+    expect(seen).toContain("Kein Live-Kurs");
+  });
+});
 
 describe("formatStrategy", () => {
   it("renders the parsed strategy with a header and the disclaimer", () => {

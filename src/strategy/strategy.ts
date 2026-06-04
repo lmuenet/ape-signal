@@ -12,7 +12,9 @@ import {
   type BriefingInput,
   type TradingProfile,
   type Strategy,
+  type Quote,
 } from "../core/ape-intel";
+import { GERMAN_DIRECTIVE_STRATEGY, HEADLESS_JSON_DIRECTIVE } from "../core/language";
 
 export interface StrategyDeps {
   fetchApewisdom: () => Promise<ApewisdomSnapshot>;
@@ -20,6 +22,7 @@ export interface StrategyDeps {
   fetchTradestie: () => Promise<TradestieSnapshot>;
   fetchNews: (ticker: string) => Promise<NewsItem[]>;
   fetchEarnings: (ticker: string) => Promise<EarningsDate | null>;
+  fetchQuote: (ticker: string) => Promise<Quote | null>;
   claudeRunner: (prompt: string) => Promise<string>;
 }
 
@@ -74,13 +77,31 @@ export async function runStrategy(
   deps: StrategyDeps,
 ): Promise<StrategyResult> {
   const input = await assembleStrategyInput(ticker, deps);
-  const prompt = buildClipboardPayload(input, {
+  const quote = await safeSource("quote", () => deps.fetchQuote(input.ticker), null as Quote | null);
+  const base = buildClipboardPayload(input, {
     basePrompt: DEFAULT_EXPORT_PROMPT,
     profile,
   });
+  const prompt = `${base}\n\n${renderPriceBlock(input.ticker, quote)}\n\n${GERMAN_DIRECTIVE_STRATEGY}\n\n${HEADLESS_JSON_DIRECTIVE}`;
   const raw = await deps.claudeRunner(prompt);
   const strategy = parseStrategy(raw);
   return { input, strategy, raw };
+}
+
+function renderPriceBlock(ticker: string, quote: Quote | null): string {
+  if (!quote) {
+    return `## Aktueller Kurs (Live)\nKein Live-Kurs verfügbar (Quelle nicht erreichbar).`;
+  }
+  const sign = quote.changePct >= 0 ? "+" : "";
+  return [
+    "## Aktueller Kurs (Live, Finnhub)",
+    `${ticker}: ${quote.current.toFixed(2)} (heute ${sign}${quote.changePct.toFixed(2)}%, ` +
+      `Tageshoch ${quote.high.toFixed(2)}, Tagestief ${quote.low.toFixed(2)}, ` +
+      `Eröffnung ${quote.open.toFixed(2)}, Vortagesschluss ${quote.prevClose.toFixed(2)})`,
+    "",
+    "Du hast jetzt den AKTUELLEN Kurs. Nenne konkrete Entry-, Target- und Stop-Zahlen",
+    "relativ zu diesem Kurs — verstecke dich nicht hinter \"ich kann den Kurs nicht sehen\".",
+  ].join("\n");
 }
 
 const DISCLAIMER = "Informational research, not financial advice.";

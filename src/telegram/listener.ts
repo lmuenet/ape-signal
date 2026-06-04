@@ -7,6 +7,7 @@ import {
   fetchTradestieSnapshot,
   fetchCompanyNews,
   fetchNextEarnings,
+  fetchQuote,
 } from "../core/ape-intel";
 import { createTelegramClient } from "./client";
 import { spawnClaudeRunner } from "../claude/invoke";
@@ -42,6 +43,7 @@ async function main(): Promise<void> {
     fetchTradestie: () => fetchTradestieSnapshot(fetch),
     fetchNews: (t) => (finnhubKey ? fetchCompanyNews(t, finnhubKey, fetch) : Promise.resolve([])),
     fetchEarnings: (t) => (finnhubKey ? fetchNextEarnings(t, finnhubKey, fetch) : Promise.resolve(null)),
+    fetchQuote: (t) => (finnhubKey ? fetchQuote(t, finnhubKey, fetch) : Promise.resolve(null)),
     claudeRunner: spawnClaudeRunner,
   };
   const scanDeps: ScanDeps = {
