@@ -60,7 +60,7 @@ describe("assembleStrategyInput", () => {
       fetchTradestie: boom,
       fetchNews: boom,
       fetchEarnings: boom,
-      fetchQuote: boom,
+      fetchQuote: async () => null, // not exercised here: assembleStrategyInput never calls fetchQuote; present only to satisfy the StrategyDeps type
       claudeRunner: async () => "",
     });
     expect(input.ticker).toBe("TSLA");
@@ -106,7 +106,7 @@ describe("runStrategy price + language", () => {
       claudeRunner: async (p) => { seen = p; return ""; },
     }));
     expect(seen).toContain("Aktueller Kurs");
-    expect(seen).toContain("1234.5");
+    expect(seen).toContain("1234.50");
     expect(seen).toContain("DEUTSCH");
     expect(seen).toContain("KEINE Tools");
   });

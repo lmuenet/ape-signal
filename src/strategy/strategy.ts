@@ -76,8 +76,10 @@ export async function runStrategy(
   profile: TradingProfile,
   deps: StrategyDeps,
 ): Promise<StrategyResult> {
-  const input = await assembleStrategyInput(ticker, deps);
-  const quote = await safeSource("quote", () => deps.fetchQuote(input.ticker), null as Quote | null);
+  const [input, quote] = await Promise.all([
+    assembleStrategyInput(ticker, deps),
+    safeSource("quote", () => deps.fetchQuote(ticker.toUpperCase()), null as Quote | null),
+  ]);
   const base = buildClipboardPayload(input, {
     basePrompt: DEFAULT_EXPORT_PROMPT,
     profile,
