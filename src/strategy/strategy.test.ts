@@ -61,3 +61,30 @@ describe("runStrategy", () => {
     expect(result.raw).toBe("no json here");
   });
 });
+
+import { formatStrategy } from "./strategy";
+
+describe("formatStrategy", () => {
+  it("renders the parsed strategy with a header and the disclaimer", () => {
+    const text = formatStrategy("TSLA", { risk: "balanced", horizon: "swing" }, {
+      recommendation: "Small speculative long",
+      conviction: "medium",
+      direction: "long",
+      timeframe: "1-2 weeks",
+      targetPrice: "260",
+      stopLoss: "230",
+      rationale: "momentum",
+      risks: "earnings gap",
+    }, "raw text");
+    expect(text).toContain("TSLA");
+    expect(text).toContain("Small speculative long");
+    expect(text).toContain("medium");
+    expect(text).toContain("not financial advice");
+  });
+
+  it("falls back to the raw claude output when parsing failed", () => {
+    const text = formatStrategy("TSLA", { risk: "balanced", horizon: "swing" }, null, "free-form analysis");
+    expect(text).toContain("free-form analysis");
+    expect(text).toContain("TSLA");
+  });
+});
