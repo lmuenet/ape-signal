@@ -6,6 +6,8 @@ Wants=network-online.target
 [Service]
 WorkingDirectory=/opt/ape-signal
 EnvironmentFile=/etc/ape-signal.env
+# HOME so the Claude CLI finds the interactive `claude login` credentials in /root/.claude.
+Environment=HOME=/root
 ExecStart=/usr/bin/npx tsx src/telegram/listener.ts
 Restart=always
 RestartSec=5
