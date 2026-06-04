@@ -153,3 +153,9 @@ Get the **existing** pipeline running on the VPS, Reddit off.
 - `/signal` payload schema + auth token rotation for v2.
 - Whether Reddit ever returns (only if a proxy budget is approved).
 - Mobile report layout density (iterate after first live runs).
+- **Datacenter-IP blocks (v2+ proxy decision):** the VPS IP is hard-blocked by
+  StockTwits (403) and Tradestie (fetch failed), same class as the dropped Reddit
+  crawl. v1/v1.1 degrade these to "no data" gracefully; the barometer for single
+  stocks leans on Tradestie+Apewisdom (when reachable) + Claude's own research.
+  Restoring StockTwits/Tradestie (and possibly a second price source) would need a
+  residential/clean-IP proxy — a budget decision, deferred.
