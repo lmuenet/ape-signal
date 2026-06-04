@@ -80,3 +80,9 @@ export {
 export type {
   Strategy,
 } from "../../vendor/ape-intel/src/lib/strategy";
+
+export { fetchQuote } from "./quote";
+export type { Quote } from "./quote";
+
+export { fetchTradingViewTrend } from "./marketData";
+export type { TrendQuote } from "./marketData";

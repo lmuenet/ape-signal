@@ -1,6 +1,6 @@
 // src/scan/index.ts
 import { loadEnv, requireFinnhub, requireRedditApi } from "../config/env";
-import { fetchApewisdomSnapshot, fetchNextEarnings } from "../core/ape-intel";
+import { fetchApewisdomSnapshot, fetchNextEarnings, fetchTradingViewTrend } from "../core/ape-intel";
 import { createTelegramClient } from "../telegram/client";
 import { spawnClaudeRunner } from "../claude/invoke";
 import { runScan, type ScanDeps } from "./pipeline";
@@ -27,6 +27,9 @@ async function main(): Promise<void> {
     fetchSnapshot: () => fetchApewisdomSnapshot(fetch),
     claudeRunner: spawnClaudeRunner,
     send: (text) => telegram.sendMessage(text),
+    // Live price + 1W/1M/3M trend via the TradingView scanner (free, no key,
+    // reachable from the VPS). A failure degrades to "no prices" in the pipeline.
+    fetchTrend: (tickers) => fetchTradingViewTrend(tickers, fetch),
   };
 
   // Reddit off-radar via the Reddit OAuth API: opt-in (ENABLE_REDDIT_CRAWL).

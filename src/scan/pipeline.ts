@@ -5,7 +5,9 @@ import {
   type ApewisdomSnapshot,
   type TrendingChallenge,
   type TrendingRow,
+  type TrendQuote,
 } from "../core/ape-intel";
+import { GERMAN_DIRECTIVE_TRENDING, HEADLESS_JSON_DIRECTIVE } from "../core/language";
 import { snapshotToRows } from "./trending";
 import { formatReport } from "./format";
 import { offRadar } from "./offradar";
@@ -25,6 +27,31 @@ export interface ScanDeps {
   send: (text: string) => Promise<void>;
   crawlReddit?: () => Promise<RedditCandidate[]>;
   fetchEarningsToday?: (tickers: string[]) => Promise<EarningsRow[]>;
+  fetchTrend?: (tickers: string[]) => Promise<Map<string, TrendQuote>>;
+}
+
+/**
+ * Render a live price + 1W/1M/3M trend block from the TradingView scanner data,
+ * in the trending list's order. Tickers the scanner didn't return are skipped.
+ * Returns "" when there's nothing to show (caller filters it out).
+ */
+function renderTrendBlock(rows: TrendingRow[], trend: Map<string, TrendQuote>): string {
+  const sign = (n: number) => (n >= 0 ? "+" : "") + n.toFixed(2);
+  const lines = rows
+    .map((r) => {
+      const q = trend.get(r.ticker.toUpperCase());
+      if (!q) return null;
+      return `${r.ticker}: ${q.close.toFixed(2)} (heute ${sign(q.changePct)}%, 1W ${sign(q.perfW)}%, 1M ${sign(q.perfM)}%, 3M ${sign(q.perf3M)}%)`;
+    })
+    .filter((x): x is string => x !== null);
+  if (lines.length === 0) return "";
+  return [
+    "## Kurse & Trend (Live, TradingView)",
+    ...lines,
+    "",
+    "Nutze diese aktuellen Kurse und die 1W/1M/3M-Performance aktiv in deiner Einschaetzung",
+    "(Momentum, Ueberdehnung, wo der Wert herkommt) — nicht nur die Mention-Zahlen.",
+  ].join("\n");
 }
 
 /**
@@ -63,7 +90,24 @@ export async function runScan(
   }
 
   const combined = [...rows, ...offRadarRows];
-  const payload = buildTrendingClipboardPayload(combined);
+
+  let trend = new Map<string, TrendQuote>();
+  if (deps.fetchTrend) {
+    try {
+      trend = await deps.fetchTrend(combined.map((r) => r.ticker));
+    } catch (err) {
+      console.error(`[scan] trend fetch failed, continuing without prices: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  const payload = [
+    buildTrendingClipboardPayload(combined),
+    renderTrendBlock(combined, trend),
+    GERMAN_DIRECTIVE_TRENDING,
+    HEADLESS_JSON_DIRECTIVE,
+  ]
+    .filter((section) => section.length > 0)
+    .join("\n\n");
   const raw = await deps.claudeRunner(payload);
   const challenge = parseTrendingChallenge(raw) ?? { summary: "", verdicts: [] };
 

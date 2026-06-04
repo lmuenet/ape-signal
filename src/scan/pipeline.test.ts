@@ -35,6 +35,67 @@ describe("runScan", () => {
     expect(result.verdicts).toHaveLength(1);
   });
 
+  it("appends the German + headless directives to the trending prompt", async () => {
+    let seen = "";
+    await runScan(
+      { label: "T", limit: 5 },
+      {
+        fetchSnapshot: async () =>
+          new Map([["TSLA", { rank: 1, mentions: 100, mentions24hAgo: 80 }]]) as ApewisdomSnapshot,
+        claudeRunner: async (p) => {
+          seen = p;
+          return "";
+        },
+        send: async () => {},
+      },
+    );
+    expect(seen).toContain("DEUTSCH");
+    expect(seen).toContain("signal | noise | watch");
+    expect(seen).toContain("KEINE Tools");
+    // no fetchTrend dep here → no price block in the prompt
+    expect(seen).not.toContain("Kurse & Trend");
+  });
+
+  it("appends a TradingView price + trend block when fetchTrend is provided", async () => {
+    let seen = "";
+    await runScan(
+      { label: "T", limit: 5 },
+      {
+        fetchSnapshot: async () =>
+          new Map([["AVGO", { rank: 1, mentions: 100, mentions24hAgo: 80 }]]) as ApewisdomSnapshot,
+        claudeRunner: async (p) => {
+          seen = p;
+          return "";
+        },
+        send: async () => {},
+        fetchTrend: async () =>
+          new Map([["AVGO", { close: 418.13, changePct: -12.75, perfW: -0.71, perfM: -0.84, perf3M: 27.37 }]]),
+      },
+    );
+    expect(seen).toContain("Kurse & Trend");
+    expect(seen).toContain("418.13");
+    expect(seen).toContain("3M +27.37%");
+  });
+
+  it("still sends a report if the trend fetch throws", async () => {
+    const send = vi.fn(async () => {});
+    await runScan(
+      { label: "T", limit: 5 },
+      {
+        fetchSnapshot: async () =>
+          new Map([["AVGO", { rank: 1, mentions: 100, mentions24hAgo: 80 }]]) as ApewisdomSnapshot,
+        claudeRunner: async () =>
+          '```json\n{"summary":"x","verdicts":[{"ticker":"AVGO","verdict":"signal"}]}\n```',
+        send,
+        fetchTrend: async () => {
+          throw new Error("TradingView scan returned 503");
+        },
+      },
+    );
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(send.mock.calls[0][0]).toContain("AVGO");
+  });
+
   it("still sends a report (raw list) when claude output cannot be parsed", async () => {
     const fetchSnapshot = vi.fn(async () => fakeSnapshot());
     const claudeRunner = vi.fn(async () => "sorry, no json here");
