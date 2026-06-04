@@ -86,3 +86,5 @@ export type { Quote } from "./quote";
 
 export { fetchTradingViewTrend } from "./marketData";
 export type { TrendQuote } from "./marketData";
+
+export { fetchRelevantCompanyNews } from "./companyNews";
