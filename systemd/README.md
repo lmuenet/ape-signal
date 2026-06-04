@@ -1,8 +1,16 @@
 # systemd deployment
 
 Copy units and enable. Requires Node LTS at `/usr/bin`, repo at `/opt/ape-signal`,
-secrets at `/etc/ape-signal.env` (chmod 600), and server timezone = `Europe/Berlin`
-(`timedatectl set-timezone Europe/Berlin`).
+secrets at `/etc/ape-signal.env` (chmod 600).
+
+**Install dependencies WITH dev deps** — `tsx` (the runtime used by `ExecStart`) is a
+devDependency. Use `npm ci` (NOT `npm ci --omit=dev`); a production-only install
+omits `tsx` and both services fail to start.
+
+The `OnCalendar` lines carry an explicit `Europe/Berlin` suffix, so the timers fire
+at Berlin wall-clock (DST-aware) regardless of the server's system timezone. Setting
+`timedatectl set-timezone Europe/Berlin` is still recommended so logs read in local
+time, but is no longer required for correct scheduling.
 
 ```bash
 cp /opt/ape-signal/systemd/ape-signal-scan@.service /etc/systemd/system/
