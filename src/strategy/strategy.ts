@@ -68,6 +68,7 @@ export interface StrategyResult {
   input: BriefingInput;
   strategy: Strategy | null;
   raw: string;
+  quote: Quote | null;
 }
 
 /** Assemble → build the ADR-0010 export prompt → claude -p → parseStrategy. */
@@ -87,7 +88,7 @@ export async function runStrategy(
   const prompt = `${base}\n\n${renderPriceBlock(input.ticker, quote)}\n\n${GERMAN_DIRECTIVE_STRATEGY}\n\n${HEADLESS_JSON_DIRECTIVE}`;
   const raw = await deps.claudeRunner(prompt);
   const strategy = parseStrategy(raw);
-  return { input, strategy, raw };
+  return { input, strategy, raw, quote };
 }
 
 function renderPriceBlock(ticker: string, quote: Quote | null): string {
@@ -108,34 +109,83 @@ function renderPriceBlock(ticker: string, quote: Quote | null): string {
 
 const DISCLAIMER = "Informational research, not financial advice.";
 
-function line(label: string, value: string | undefined): string | null {
-  return value ? `${label}: ${value}` : null;
+/** Escape the three characters that matter for Telegram HTML parse mode. */
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
-/** Render a Strategy as a compact Telegram message. Falls back to raw text. */
+/** A value longer than this drops out of the monospace box into flowing text. */
+const BOX_MAX = 30;
+
+interface Field {
+  label: string;
+  value: string | undefined;
+}
+
+/**
+ * Render a Strategy as a Telegram HTML card (send with parseMode "HTML"): a
+ * monospace <pre> box with the at-a-glance decision fields (short values only,
+ * so it never wraps) on top, then the long fields as <b>-headed flowing
+ * paragraphs below. Falls back to the escaped raw claude text when parsing
+ * failed. All dynamic content is HTML-escaped — Claude writes things like
+ * ">205"/"<183" that would otherwise break the HTML.
+ */
 export function formatStrategy(
   ticker: string,
   profile: TradingProfile,
   strategy: Strategy | null,
   raw: string,
+  quote: Quote | null,
 ): string {
-  const header = `📊 ${ticker} — ${profile.risk}/${profile.horizon}`;
+  const header = `📊 <b>${escapeHtml(ticker)} — ${escapeHtml(profile.risk)}/${escapeHtml(profile.horizon)}</b>`;
   if (!strategy) {
-    return [header, "", raw.trim(), "", DISCLAIMER].join("\n");
+    return [header, "", escapeHtml(raw.trim()), "", DISCLAIMER].join("\n");
   }
-  const rows = [
-    line("Recommendation", strategy.recommendation),
-    line("Conviction", strategy.conviction),
-    line("Direction", strategy.direction),
-    line("Timeframe", strategy.timeframe),
-    line("Target", strategy.targetPrice),
-    line("Stop", strategy.stopLoss),
-    line("Leverage", strategy.leverage),
-    line("Instruments", strategy.instruments),
-    line("Sizing", strategy.positionSizing),
-    line("Barometer critique", strategy.barometerCritique),
-    line("Rationale", strategy.rationale),
-    line("Risks", strategy.risks),
-  ].filter((x): x is string => x !== null);
-  return [header, "", ...rows, "", DISCLAIMER].join("\n");
+
+  // These go in the box only if short enough; otherwise they flow below.
+  const flexible: Field[] = [
+    { label: "Horizont", value: strategy.timeframe },
+    { label: "Ziel", value: strategy.targetPrice },
+    { label: "Stop", value: strategy.stopLoss },
+    { label: "Hebel", value: strategy.leverage },
+  ];
+
+  const boxRows: Array<[string, string]> = [
+    ["Direction", strategy.direction ?? "—"],
+    ["Conviction", strategy.conviction ?? "—"],
+  ];
+  if (quote) {
+    const sign = quote.changePct >= 0 ? "+" : "";
+    boxRows.push(["Kurs", `${quote.current.toFixed(2)} (${sign}${quote.changePct.toFixed(2)}%)`]);
+  }
+  const boxed = new Set<string>();
+  for (const f of flexible) {
+    if (f.value && f.value.length <= BOX_MAX) {
+      boxRows.push([f.label, f.value]);
+      boxed.add(f.label);
+    }
+  }
+
+  const width = Math.max(...boxRows.map(([label]) => label.length));
+  const box =
+    "<pre>" +
+    boxRows.map(([label, value]) => `${label.padEnd(width)}  ${escapeHtml(value)}`).join("\n") +
+    "</pre>";
+
+  // Flowing: recommendation first, any flexible field that didn't fit the box
+  // (in its natural place), then the long-form fields.
+  const flowing: Field[] = [
+    { label: "Empfehlung", value: strategy.recommendation },
+    ...flexible.filter((f) => !boxed.has(f.label)),
+    { label: "Instrumente", value: strategy.instruments },
+    { label: "Positionsgröße", value: strategy.positionSizing },
+    { label: "Barometer-Kritik", value: strategy.barometerCritique },
+    { label: "Begründung", value: strategy.rationale },
+    { label: "Risiken", value: strategy.risks },
+  ];
+  const sections = flowing
+    .filter((f): f is { label: string; value: string } => Boolean(f.value))
+    .map((f) => `<b>${f.label}</b>\n${escapeHtml(f.value)}`);
+
+  return [header, "", box, "", sections.join("\n\n"), "", DISCLAIMER].join("\n");
 }

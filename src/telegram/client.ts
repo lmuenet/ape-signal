@@ -29,8 +29,12 @@ export function splitMessage(text: string, limit: number = TELEGRAM_LIMIT): stri
   return chunks;
 }
 
+export interface SendOptions {
+  parseMode?: "HTML" | "MarkdownV2";
+}
+
 export interface TelegramClient {
-  sendMessage(text: string): Promise<void>;
+  sendMessage(text: string, opts?: SendOptions): Promise<void>;
 }
 
 export function createTelegramClient(
@@ -39,12 +43,14 @@ export function createTelegramClient(
 ): TelegramClient {
   const url = `https://api.telegram.org/bot${config.botToken}/sendMessage`;
   return {
-    async sendMessage(text: string): Promise<void> {
+    async sendMessage(text: string, opts: SendOptions = {}): Promise<void> {
       for (const chunk of splitMessage(text)) {
+        const body: Record<string, unknown> = { chat_id: config.chatId, text: chunk };
+        if (opts.parseMode) body.parse_mode = opts.parseMode;
         const res = await fetchFn(url, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ chat_id: config.chatId, text: chunk }),
+          body: JSON.stringify(body),
         });
         const data = (await res.json().catch(() => ({}))) as { ok?: boolean; description?: string };
         if (!res.ok || data.ok === false) {
