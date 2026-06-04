@@ -38,6 +38,9 @@ export type {
   NewsItem,
 } from "../../vendor/ape-intel/src/lib/finnhub";
 
+export { classifyCatalyst } from "../../vendor/ape-intel/src/lib/catalyst";
+export type { CatalystTag } from "../../vendor/ape-intel/src/lib/catalyst";
+
 export {
   fetchStockTwitsForTicker,
 } from "../../vendor/ape-intel/src/lib/stocktwits";
@@ -86,3 +89,5 @@ export type { Quote } from "./quote";
 
 export { fetchTradingViewTrend } from "./marketData";
 export type { TrendQuote } from "./marketData";
+
+export { fetchRelevantCompanyNews } from "./companyNews";
