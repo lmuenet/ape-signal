@@ -1,0 +1,100 @@
+// src/telegram/listener.ts
+import { join } from "node:path";
+import { loadEnv, requireFinnhub } from "../config/env";
+import {
+  fetchApewisdomSnapshot,
+  fetchStockTwitsForTicker,
+  fetchTradestieSnapshot,
+  fetchCompanyNews,
+  fetchNextEarnings,
+} from "../core/ape-intel";
+import { createTelegramClient } from "./client";
+import { spawnClaudeRunner } from "../claude/invoke";
+import { parseCommand } from "./commands";
+import { readOffset, writeOffset } from "./offset";
+import { runStrategy, formatStrategy, type StrategyDeps } from "../strategy/strategy";
+import { runScan, type ScanDeps } from "../scan/pipeline";
+
+const OFFSET_PATH = process.env.OFFSET_PATH ?? join(process.cwd(), ".telegram-offset");
+const POLL_TIMEOUT = 25; // seconds — long-poll, ~2880 reqs/day
+
+interface TgMessage { chat: { id: number }; text?: string }
+interface TgUpdate { update_id: number; message?: TgMessage }
+
+async function getUpdates(token: string, offset: number): Promise<TgUpdate[]> {
+  const url = `https://api.telegram.org/bot${token}/getUpdates?timeout=${POLL_TIMEOUT}&offset=${offset}`;
+  const res = await fetch(url, { signal: AbortSignal.timeout((POLL_TIMEOUT + 10) * 1000) });
+  const data = (await res.json()) as { ok: boolean; result?: TgUpdate[]; description?: string };
+  if (!data.ok) throw new Error(`getUpdates failed: ${data.description}`);
+  return data.result ?? [];
+}
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+async function main(): Promise<void> {
+  const env = loadEnv();
+  const telegram = createTelegramClient({ botToken: env.telegramBotToken, chatId: env.telegramChatId });
+
+  const finnhubKey = env.finnhubApiKey ? requireFinnhub(env) : undefined;
+  const strategyDeps: StrategyDeps = {
+    fetchApewisdom: () => fetchApewisdomSnapshot(fetch),
+    fetchStockTwits: (t) => fetchStockTwitsForTicker(t, fetch),
+    fetchTradestie: () => fetchTradestieSnapshot(fetch),
+    fetchNews: (t) => (finnhubKey ? fetchCompanyNews(t, finnhubKey, fetch) : Promise.resolve([])),
+    fetchEarnings: (t) => (finnhubKey ? fetchNextEarnings(t, finnhubKey, fetch) : Promise.resolve(null)),
+    claudeRunner: spawnClaudeRunner,
+  };
+  const scanDeps: ScanDeps = {
+    fetchSnapshot: () => fetchApewisdomSnapshot(fetch),
+    claudeRunner: spawnClaudeRunner,
+    send: (text) => telegram.sendMessage(text),
+  };
+
+  let offset = readOffset(OFFSET_PATH);
+  console.log(`[listener] started; offset=${offset}`);
+
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    try {
+      for (const u of await getUpdates(env.telegramBotToken, offset)) {
+        offset = u.update_id + 1;
+        writeOffset(OFFSET_PATH, offset);
+        const msg = u.message;
+        if (!msg?.text) continue;
+        if (String(msg.chat.id) !== env.telegramChatId) continue; // whitelist
+        await handle(msg.text, telegram, strategyDeps, scanDeps);
+      }
+    } catch (err) {
+      console.error(`[listener] poll error: ${err instanceof Error ? err.message : String(err)}`);
+      await sleep(3000);
+    }
+  }
+}
+
+async function handle(
+  text: string,
+  telegram: ReturnType<typeof createTelegramClient>,
+  strategyDeps: StrategyDeps,
+  scanDeps: ScanDeps,
+): Promise<void> {
+  const cmd = parseCommand(text);
+  try {
+    if (cmd.kind === "scan") {
+      await telegram.sendMessage("Starte Scan…");
+      await runScan({ label: "Manual", limit: Number(process.env.SCAN_LIMIT ?? "15") }, scanDeps);
+    } else if (cmd.kind === "strategie") {
+      await telegram.sendMessage(`Analysiere ${cmd.ticker} (${cmd.profile.risk}/${cmd.profile.horizon})…`);
+      const { strategy, raw } = await runStrategy(cmd.ticker, cmd.profile, strategyDeps);
+      await telegram.sendMessage(formatStrategy(cmd.ticker, cmd.profile, strategy, raw));
+    } else {
+      await telegram.sendMessage("Befehle: /strategie TICKER [conservative|balanced|aggressive] [intraday|swing|position] · /scan");
+    }
+  } catch (err) {
+    await telegram.sendMessage(`⚠️ Fehler: ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
+
+main().catch((err) => {
+  console.error("[listener] fatal:", err);
+  process.exitCode = 1;
+});
