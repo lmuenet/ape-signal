@@ -1,0 +1,48 @@
+# systemd deployment
+
+Copy units and enable. Requires Node LTS at `/usr/bin`, repo at `/opt/ape-signal`,
+secrets at `/etc/ape-signal.env` (chmod 600).
+
+**Install dependencies WITH dev deps** — `tsx` (the runtime used by `ExecStart`) is a
+devDependency. Use `npm ci` (NOT `npm ci --omit=dev`); a production-only install
+omits `tsx` and both services fail to start.
+
+The `OnCalendar` lines carry an explicit `Europe/Berlin` suffix, so the timers fire
+at Berlin wall-clock (DST-aware) regardless of the server's system timezone. Setting
+`timedatectl set-timezone Europe/Berlin` is still recommended so logs read in local
+time, but is no longer required for correct scheduling.
+
+```bash
+cp /opt/ape-signal/systemd/ape-signal-scan@.service /etc/systemd/system/
+cp /opt/ape-signal/systemd/ape-signal-scan-preopen.timer /etc/systemd/system/
+cp /opt/ape-signal/systemd/ape-signal-scan-preus.timer /etc/systemd/system/
+cp /opt/ape-signal/systemd/ape-signal-listener.service /etc/systemd/system/
+systemctl daemon-reload
+systemctl enable --now ape-signal-scan-preopen.timer ape-signal-scan-preus.timer
+systemctl enable --now ape-signal-listener.service
+```
+
+Verify:
+
+```bash
+systemctl list-timers 'ape-signal-*'        # NEXT times at 08:45 / 15:15 Europe/Berlin
+systemctl status ape-signal-listener        # active (running)
+journalctl -u ape-signal-listener -f        # [listener] started; offset=...
+```
+
+Run one scan immediately (any label):
+
+```bash
+systemctl start ape-signal-scan@Manual.service
+journalctl -u 'ape-signal-scan@*' -n 20 --no-pager
+```
+
+Notes:
+- The scan service is a template (`@`); the timers invoke the `PreOpen` / `PreUS`
+  instances. `Persistent=true` runs a missed scan after downtime.
+- The listener is long-running with `Restart=always` (single Telegram poll
+  connection per bot token). It persists the `getUpdates` offset to
+  `/opt/ape-signal/.telegram-offset` (set via `OFFSET_PATH` in the env file).
+- `CLAUDE_CODE_OAUTH_TOKEN` (subscription, from `claude setup-token`) lives in
+  `/etc/ape-signal.env`. It is valid ~1 year — renew around day 350. Token expiry
+  is silent; the scan's Telegram failure alert is the backstop.

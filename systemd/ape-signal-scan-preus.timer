@@ -1,0 +1,10 @@
+[Unit]
+Description=Ape Signal pre-US-open scan (15:15 Europe/Berlin)
+
+[Timer]
+OnCalendar=*-*-* 15:15:00 Europe/Berlin
+Persistent=true
+Unit=ape-signal-scan@PreUS.service
+
+[Install]
+WantedBy=timers.target
