@@ -1,4 +1,7 @@
-import { classifyCatalyst, type NewsItem } from "./ape-intel";
+// Import the vendor helpers directly (not via the ./ape-intel barrel, which
+// re-exports THIS module — that would be a circular dependency).
+import { classifyCatalyst } from "../../vendor/ape-intel/src/lib/catalyst";
+import type { NewsItem } from "../../vendor/ape-intel/src/lib/finnhub";
 
 const NEWS_ENDPOINT = "https://finnhub.io/api/v1/company-news";
 const PROFILE_ENDPOINT = "https://finnhub.io/api/v1/stock/profile2";
@@ -20,10 +23,18 @@ function escapeRegex(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-/** Company-name suffixes/fillers that carry no matching signal. */
+/**
+ * Company-name suffixes/fillers plus common generic leading words that carry no
+ * distinguishing signal — so the FIRST surviving token is the brand
+ * (e.g. "Advanced Micro Devices" → "micro", "General Electric" → "electric").
+ * This is a heuristic: a few multi-word names still reduce to a fairly generic
+ * token, but the (case-sensitive) ticker match below is the primary signal.
+ */
 const NAME_STOPWORDS = new Set([
   "inc", "incorporated", "corp", "corporation", "co", "company", "ltd", "limited",
   "plc", "group", "holdings", "holding", "the", "class", "ag", "sa", "nv",
+  "advanced", "general", "international", "american", "national", "global",
+  "united", "first", "business",
 ]);
 
 /** The distinctive token of a company name (e.g. "Corning Inc" → "corning"). */
@@ -37,16 +48,19 @@ function significantNameToken(name: string): string | null {
 }
 
 /**
- * True if a news headline is actually about this company — it names the ticker
- * as a whole word (so "MU" doesn't match "museum") or contains the distinctive
- * company-name token. This is what separates real coverage from the peer/sector
- * noise Finnhub mis-tags onto a symbol's `related` field.
+ * True if a news headline is actually about this company. Tickers appear
+ * UPPERCASE in headlines ("GLW", "(AMD)", "AT&T"), so we match the ticker
+ * case-sensitively against the ORIGINAL text — otherwise common-word tickers
+ * (CAT, ALL, IT, ON, AT) would match lowercase English words and pass
+ * everything. 1-char tickers (A, F, T, V…) are too ambiguous even uppercase, so
+ * for those we rely solely on the company name. The name token match is
+ * case-insensitive. This separates real coverage from the peer/sector noise
+ * Finnhub mis-tags onto a symbol's `related` field.
  */
 export function isRelevantHeadline(headline: string, ticker: string, companyName: string | null): boolean {
-  const h = headline.toLowerCase();
-  if (new RegExp(`\\b${escapeRegex(ticker.toLowerCase())}\\b`).test(h)) return true;
+  if (ticker.length >= 2 && new RegExp(`\\b${escapeRegex(ticker.toUpperCase())}\\b`).test(headline)) return true;
   const token = companyName ? significantNameToken(companyName) : null;
-  if (token && token.length >= 3 && new RegExp(`\\b${escapeRegex(token)}\\b`).test(h)) return true;
+  if (token && token.length >= 4 && new RegExp(`\\b${escapeRegex(token)}\\b`, "i").test(headline)) return true;
   return false;
 }
 

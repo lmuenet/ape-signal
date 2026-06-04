@@ -23,6 +23,8 @@ const GLW_NEWS = [
   { headline: "CIEN Q2 Earnings Beat on AI-Led Networking Demand", url: "u5", source: "Zacks", datetime: 998 },
 ];
 
+const NOW = new Date("2026-06-04").getTime();
+
 describe("isRelevantHeadline", () => {
   it("keeps headlines naming the ticker (word-boundary) or the company name", () => {
     expect(isRelevantHeadline("Why Corning (GLW) Stock Is Trading Up", "GLW", "Corning Inc")).toBe(true);
@@ -35,6 +37,19 @@ describe("isRelevantHeadline", () => {
   it("matches the ticker only as a whole word (no substring false positives)", () => {
     expect(isRelevantHeadline("The museum opened today", "MU", null)).toBe(false);
     expect(isRelevantHeadline("MU beats on earnings", "MU", null)).toBe(true);
+  });
+  it("matches the ticker case-sensitively so common-word tickers don't match English", () => {
+    // CAT/ALL/AT must not match the lowercase words "cat"/"all"/"at"…
+    expect(isRelevantHeadline("The cat sat on the mat", "CAT", "Caterpillar Inc")).toBe(false);
+    expect(isRelevantHeadline("Markets fall at the open today", "AT", "AT&T Inc")).toBe(false);
+    expect(isRelevantHeadline("Investors buy all the dips", "ALL", "Allstate Corp")).toBe(false);
+    // …but the uppercase ticker in a headline still matches
+    expect(isRelevantHeadline("CAT raises full-year guidance", "CAT", "Caterpillar Inc")).toBe(true);
+  });
+  it("skips 1-char tickers (too ambiguous) and relies on the company name", () => {
+    // "A" must not match the article "A" — only the name "Agilent" should
+    expect(isRelevantHeadline("A surge in chip demand is coming", "A", "Agilent Technologies Inc")).toBe(false);
+    expect(isRelevantHeadline("Agilent beats Q2 estimates", "A", "Agilent Technologies Inc")).toBe(true);
   });
 });
 
@@ -53,20 +68,20 @@ describe("fetchCompanyProfileName", () => {
 
 describe("fetchRelevantCompanyNews", () => {
   it("keeps only company-relevant items, newest first, max 5 — BEFORE truncating", async () => {
-    const news = await fetchRelevantCompanyNews("GLW", "key", stubFetch({ name: "Corning Inc" }, GLW_NEWS), 2000);
+    const news = await fetchRelevantCompanyNews("GLW", "key", stubFetch({ name: "Corning Inc" }, GLW_NEWS), NOW);
     expect(news.map((n) => n.url)).toEqual(["u3", "u4"]); // the two Corning items, newest first
     expect(news.every((n) => /corning|glw/i.test(n.headline))).toBe(true);
   });
 
   it("falls back to ticker-only matching when the profile lookup fails", async () => {
-    const news = await fetchRelevantCompanyNews("GLW", "key", stubFetch({}, GLW_NEWS, { profileOk: false }), 2000);
+    const news = await fetchRelevantCompanyNews("GLW", "key", stubFetch({}, GLW_NEWS, { profileOk: false }), NOW);
     // profile failed → name null → only the "(GLW)" headline matches by ticker
     expect(news.map((n) => n.url)).toEqual(["u3"]);
   });
 
   it("throws if the news fetch itself fails (so safeSource can degrade it)", async () => {
     await expect(
-      fetchRelevantCompanyNews("GLW", "key", stubFetch({ name: "Corning Inc" }, [], { newsOk: false }), 2000),
+      fetchRelevantCompanyNews("GLW", "key", stubFetch({ name: "Corning Inc" }, [], { newsOk: false }), NOW),
     ).rejects.toThrow("429");
   });
 });
