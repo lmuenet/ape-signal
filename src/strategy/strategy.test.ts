@@ -121,27 +121,80 @@ describe("runStrategy price + language", () => {
   });
 });
 
-describe("formatStrategy", () => {
-  it("renders the parsed strategy with a header and the disclaimer", () => {
-    const text = formatStrategy("TSLA", { risk: "balanced", horizon: "swing" }, {
-      recommendation: "Small speculative long",
-      conviction: "medium",
-      direction: "long",
-      timeframe: "1-2 weeks",
-      targetPrice: "260",
-      stopLoss: "230",
-      rationale: "momentum",
-      risks: "earnings gap",
-    }, "raw text");
-    expect(text).toContain("TSLA");
-    expect(text).toContain("Small speculative long");
-    expect(text).toContain("medium");
+describe("formatStrategy (HTML card)", () => {
+  const QUOTE = { current: 198.1, changePct: -1.22, high: 199.04, low: 183.8, open: 195, prevClose: 200.76 };
+
+  it("puts short decision fields + the live price in a monospace box, long fields as flowing text", () => {
+    const text = formatStrategy(
+      "GLW",
+      { risk: "balanced", horizon: "swing" },
+      {
+        recommendation: "Stay out — kein belastbarer Edge",
+        conviction: "low",
+        direction: "stay-out",
+        timeframe: "Beobachten; Neubewertung in 1-2 Wochen nach sauberer Kursbestaetigung ueber 205",
+        targetPrice: "Kein Long-Ziel ohne Einstieg; Watch: ueber 205 dann 215-220 (setup-abhaengig)",
+        stopLoss: "< 183",
+        rationale: "Es gibt keinen handelbaren Edge.",
+        risks: "Auf fehlerhaften Daten zu handeln.",
+      },
+      "raw",
+      QUOTE,
+    );
+    // monospace box holds the at-a-glance short fields
+    expect(text).toContain("<pre>");
+    expect(text).toContain("Direction");
+    expect(text).toContain("stay-out");
+    expect(text).toContain("Conviction");
+    expect(text).toContain("Kurs");
+    expect(text).toContain("198.10");
+    expect(text).toContain("-1.22%");
+    // a short stop lands in the box, HTML-escaped
+    expect(text).toContain("&lt; 183");
+    // long timeframe/target do NOT fit the box → flowing with bold headers
+    expect(text).toContain("<b>Empfehlung</b>");
+    expect(text).toContain("<b>Horizont</b>");
+    expect(text).toContain("<b>Ziel</b>");
+    expect(text).toContain("<b>Begründung</b>");
+    expect(text).toContain("<b>Risiken</b>");
     expect(text).toContain("not financial advice");
   });
 
-  it("falls back to the raw claude output when parsing failed", () => {
-    const text = formatStrategy("TSLA", { risk: "balanced", horizon: "swing" }, null, "free-form analysis");
-    expect(text).toContain("free-form analysis");
+  it("HTML-escapes <, > and & so Claude's >205 / <183 never break Telegram HTML", () => {
+    const text = formatStrategy(
+      "X",
+      { risk: "balanced", horizon: "swing" },
+      { recommendation: "a & b", conviction: "low", direction: "long", rationale: "buy >205, stop <183 & hold" },
+      "raw",
+      null,
+    );
+    expect(text).toContain("&amp;");
+    expect(text).toContain("&gt;205");
+    expect(text).toContain("&lt;183");
+    expect(text).not.toContain(">205"); // no raw, unescaped angle bracket
+  });
+
+  it("omits the Kurs row when no live quote is available", () => {
+    const text = formatStrategy(
+      "X",
+      { risk: "balanced", horizon: "swing" },
+      { recommendation: "x", conviction: "low", direction: "long" },
+      "raw",
+      null,
+    );
+    expect(text).not.toContain("Kurs");
+  });
+
+  it("falls back to escaped raw output (still HTML-safe) when parsing failed", () => {
+    const text = formatStrategy(
+      "TSLA",
+      { risk: "balanced", horizon: "swing" },
+      null,
+      "free <b>form</b> >5",
+      null,
+    );
+    expect(text).toContain("free &lt;b&gt;form");
     expect(text).toContain("TSLA");
+    expect(text).toContain("not financial advice");
   });
 });

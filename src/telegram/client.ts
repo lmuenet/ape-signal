@@ -29,8 +29,12 @@ export function splitMessage(text: string, limit: number = TELEGRAM_LIMIT): stri
   return chunks;
 }
 
+export interface SendOptions {
+  parseMode?: "HTML" | "MarkdownV2";
+}
+
 export interface TelegramClient {
-  sendMessage(text: string): Promise<void>;
+  sendMessage(text: string, opts?: SendOptions): Promise<void>;
 }
 
 export function createTelegramClient(
@@ -39,12 +43,19 @@ export function createTelegramClient(
 ): TelegramClient {
   const url = `https://api.telegram.org/bot${config.botToken}/sendMessage`;
   return {
-    async sendMessage(text: string): Promise<void> {
+    // NOTE on parseMode + splitMessage: chunks are split on newlines and each is
+    // sent with the same parse_mode. Callers using "HTML" must keep any multi-line
+    // tag block (e.g. <pre>) small and near the top so it always lands wholly in
+    // the first chunk — a split must never bisect an open tag. The /strategie card
+    // satisfies this (tiny <pre> box on top; flowing text uses per-line <b>…</b>).
+    async sendMessage(text: string, opts: SendOptions = {}): Promise<void> {
       for (const chunk of splitMessage(text)) {
+        const body: Record<string, unknown> = { chat_id: config.chatId, text: chunk };
+        if (opts.parseMode) body.parse_mode = opts.parseMode;
         const res = await fetchFn(url, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ chat_id: config.chatId, text: chunk }),
+          body: JSON.stringify(body),
         });
         const data = (await res.json().catch(() => ({}))) as { ok?: boolean; description?: string };
         if (!res.ok || data.ok === false) {

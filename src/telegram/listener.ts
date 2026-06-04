@@ -88,8 +88,8 @@ async function handle(
       await runScan({ label: "Manual", limit: Number(process.env.SCAN_LIMIT ?? "15") }, scanDeps);
     } else if (cmd.kind === "strategie") {
       await telegram.sendMessage(`Analysiere ${cmd.ticker} (${cmd.profile.risk}/${cmd.profile.horizon})…`);
-      const { strategy, raw } = await runStrategy(cmd.ticker, cmd.profile, strategyDeps);
-      await telegram.sendMessage(formatStrategy(cmd.ticker, cmd.profile, strategy, raw));
+      const { strategy, raw, quote } = await runStrategy(cmd.ticker, cmd.profile, strategyDeps);
+      await telegram.sendMessage(formatStrategy(cmd.ticker, cmd.profile, strategy, raw, quote), { parseMode: "HTML" });
     } else {
       await telegram.sendMessage("Befehle: /strategie TICKER [conservative|balanced|aggressive] [intraday|swing|position] · /scan");
     }
