@@ -35,6 +35,25 @@ describe("runScan", () => {
     expect(result.verdicts).toHaveLength(1);
   });
 
+  it("appends the German + headless directives to the trending prompt", async () => {
+    let seen = "";
+    await runScan(
+      { label: "T", limit: 5 },
+      {
+        fetchSnapshot: async () =>
+          new Map([["TSLA", { rank: 1, mentions: 100, mentions24hAgo: 80 }]]) as ApewisdomSnapshot,
+        claudeRunner: async (p) => {
+          seen = p;
+          return "";
+        },
+        send: async () => {},
+      },
+    );
+    expect(seen).toContain("DEUTSCH");
+    expect(seen).toContain("signal | noise | watch");
+    expect(seen).toContain("KEINE Tools");
+  });
+
   it("still sends a report (raw list) when claude output cannot be parsed", async () => {
     const fetchSnapshot = vi.fn(async () => fakeSnapshot());
     const claudeRunner = vi.fn(async () => "sorry, no json here");

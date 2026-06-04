@@ -6,6 +6,7 @@ import {
   type TrendingChallenge,
   type TrendingRow,
 } from "../core/ape-intel";
+import { GERMAN_DIRECTIVE_TRENDING, HEADLESS_JSON_DIRECTIVE } from "../core/language";
 import { snapshotToRows } from "./trending";
 import { formatReport } from "./format";
 import { offRadar } from "./offradar";
@@ -63,7 +64,7 @@ export async function runScan(
   }
 
   const combined = [...rows, ...offRadarRows];
-  const payload = buildTrendingClipboardPayload(combined);
+  const payload = `${buildTrendingClipboardPayload(combined)}\n\n${GERMAN_DIRECTIVE_TRENDING}\n\n${HEADLESS_JSON_DIRECTIVE}`;
   const raw = await deps.claudeRunner(payload);
   const challenge = parseTrendingChallenge(raw) ?? { summary: "", verdicts: [] };
 
