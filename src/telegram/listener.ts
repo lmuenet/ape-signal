@@ -8,6 +8,7 @@ import {
   fetchCompanyNews,
   fetchNextEarnings,
   fetchQuote,
+  fetchTradingViewTrend,
 } from "../core/ape-intel";
 import { createTelegramClient } from "./client";
 import { spawnClaudeRunner } from "../claude/invoke";
@@ -50,6 +51,7 @@ async function main(): Promise<void> {
     fetchSnapshot: () => fetchApewisdomSnapshot(fetch),
     claudeRunner: spawnClaudeRunner,
     send: (text) => telegram.sendMessage(text),
+    fetchTrend: (tickers) => fetchTradingViewTrend(tickers, fetch),
   };
 
   let offset = readOffset(OFFSET_PATH);
