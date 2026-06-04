@@ -23,18 +23,34 @@ export interface StrategyDeps {
   claudeRunner: (prompt: string) => Promise<string>;
 }
 
-/** Gather one ticker's data into a BriefingInput. Missing rows become null. */
+/**
+ * Run a single source fetch but never let it sink the whole briefing: a thrown
+ * error (e.g. a datacenter-IP block — StockTwits/Reddit 403 from the VPS) is
+ * logged and the source degrades to its empty value. Mirrors the scan
+ * pipeline's "a source failure is logged and the run continues" philosophy;
+ * Claude still gets a (sparser) briefing and does its own research.
+ */
+async function safeSource<T>(label: string, fetchFn: () => Promise<T>, fallback: T): Promise<T> {
+  try {
+    return await fetchFn();
+  } catch (err) {
+    console.error(`[strategy] ${label} failed, continuing without it: ${err instanceof Error ? err.message : String(err)}`);
+    return fallback;
+  }
+}
+
+/** Gather one ticker's data into a BriefingInput. Missing/failed rows become null/empty. */
 export async function assembleStrategyInput(
   ticker: string,
   deps: StrategyDeps,
 ): Promise<BriefingInput> {
   const t = ticker.toUpperCase();
   const [ape, stocktwits, tdMap, news, earnings] = await Promise.all([
-    deps.fetchApewisdom(),
-    deps.fetchStockTwits(t),
-    deps.fetchTradestie(),
-    deps.fetchNews(t),
-    deps.fetchEarnings(t),
+    safeSource("apewisdom", () => deps.fetchApewisdom(), new Map() as ApewisdomSnapshot),
+    safeSource("stocktwits", () => deps.fetchStockTwits(t), null as StockTwitsEntry | null),
+    safeSource("tradestie", () => deps.fetchTradestie(), new Map() as TradestieSnapshot),
+    safeSource("news", () => deps.fetchNews(t), [] as NewsItem[]),
+    safeSource("earnings", () => deps.fetchEarnings(t), null as EarningsDate | null),
   ]);
   const apewisdom = ape.get(t) ?? null;
   const tradestie = tdMap.get(t) ?? null;

@@ -34,6 +34,39 @@ describe("assembleStrategyInput", () => {
     expect(input.apewisdom).toBeNull();
     expect(input.ticker).toBe("NONE");
   });
+
+  it("survives a throwing source (e.g. StockTwits 403 from a blocked IP) and still uses the rest", async () => {
+    const input = await assembleStrategyInput("tsla", deps({
+      fetchStockTwits: async () => {
+        throw new Error("StockTwits returned 403");
+      },
+    }));
+    // StockTwits degraded to null, but the briefing still assembled...
+    expect(input.stocktwits).toBeNull();
+    expect(input.ticker).toBe("TSLA");
+    // ...and the barometer still computed from the surviving Tradestie source.
+    expect(input.apewisdom?.mentions).toBe(120);
+    expect(input.aggregate?.barometer.label).not.toBe("unavailable");
+  });
+
+  it("still returns a usable input even if EVERY source throws", async () => {
+    const boom = async () => {
+      throw new Error("blocked");
+    };
+    const input = await assembleStrategyInput("tsla", {
+      fetchApewisdom: boom,
+      fetchStockTwits: boom,
+      fetchTradestie: boom,
+      fetchNews: boom,
+      fetchEarnings: boom,
+      claudeRunner: async () => "",
+    });
+    expect(input.ticker).toBe("TSLA");
+    expect(input.apewisdom).toBeNull();
+    expect(input.stocktwits).toBeNull();
+    expect(input.news).toEqual([]);
+    expect(input.earnings).toBeNull();
+  });
 });
 
 import { runStrategy, DEFAULT_PROFILE_EXPORT } from "./strategy";
