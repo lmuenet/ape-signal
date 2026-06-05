@@ -1,4 +1,4 @@
-const SCANNER_ENDPOINT = "https://scanner.tradingview.com/america/scan";
+import { postScan, num, type ScanResponse, type FetchFn } from "../core/tvScanner";
 
 export interface RsCandidate {
   ticker: string;
@@ -21,30 +21,6 @@ export interface RsOptions {
   minAvgVol?: number;
 }
 
-type FetchFn = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
-
-interface ScanRow {
-  s?: string;
-  d?: unknown[];
-}
-interface ScanResponse {
-  data?: ScanRow[];
-}
-
-function num(v: unknown): number {
-  return typeof v === "number" ? v : 0;
-}
-
-async function scan(fetchFn: FetchFn, body: unknown): Promise<ScanResponse> {
-  const res = await fetchFn(SCANNER_ENDPOINT, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) throw new Error(`TradingView scan returned ${res.status}`);
-  return (await res.json()) as ScanResponse;
-}
-
 /**
  * Long/short candidates by RELATIVE STRENGTH vs the market, computed from the
  * TradingView scanner (free, no key, reachable from the VPS where ZenBot/other
@@ -59,15 +35,23 @@ export async function fetchRsLongShort(fetchFn: FetchFn = fetch, opts: RsOptions
   const minMarketCap = opts.minMarketCap ?? 10_000_000_000;
   const minAvgVol = opts.minAvgVol ?? 1_000_000;
 
-  const spy = await scan(fetchFn, {
+  const spy = await postScan(fetchFn, {
     symbols: { tickers: ["AMEX:SPY"], query: { types: [] } },
     columns: ["Perf.1M"],
   });
-  const spyPerfM = num(spy.data?.[0]?.d?.[0]);
+  const rawSpy = spy.data?.[0]?.d?.[0];
+  if (typeof rawSpy !== "number") {
+    // No benchmark → RS would be meaningless; throw so the caller degrades to no section.
+    throw new Error("TradingView scan returned no SPY Perf.1M benchmark");
+  }
+  const spyPerfM = rawSpy;
 
   const baseFilter = [
     { left: "market_cap_basic", operation: "egreater", right: minMarketCap },
     { left: "average_volume_90d_calc", operation: "egreater", right: minAvgVol },
+    // common stocks only — exclude ETFs / leveraged funds (SPY, TQQQ, …) which
+    // are type "fund" and would otherwise dominate or pollute a stock RS list.
+    { left: "type", operation: "equal", right: "stock" },
   ];
   const columns = ["name", "close", "change", "Perf.W", "Perf.1M"];
   const query = (sortOrder: "desc" | "asc") => ({
@@ -78,8 +62,8 @@ export async function fetchRsLongShort(fetchFn: FetchFn = fetch, opts: RsOptions
   });
 
   const [longsRaw, shortsRaw] = await Promise.all([
-    scan(fetchFn, query("desc")),
-    scan(fetchFn, query("asc")),
+    postScan(fetchFn, query("desc")),
+    postScan(fetchFn, query("asc")),
   ]);
 
   const map = (resp: ScanResponse): RsCandidate[] =>

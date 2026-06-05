@@ -43,4 +43,27 @@ describe("fetchRsLongShort", () => {
   it("throws on a non-ok scanner response (so the caller can degrade it)", async () => {
     await expect(fetchRsLongShort(stubScanner({ ok: false }))).rejects.toThrow("503");
   });
+
+  it("throws when SPY's benchmark is missing (rather than silently using rs vs 0)", async () => {
+    const noSpy = (async (_url: RequestInfo | URL, init?: RequestInit) => {
+      const body = String(init?.body ?? "");
+      if (body.includes("AMEX:SPY")) return jsonResponse({ data: [] }); // 200 but empty
+      return jsonResponse({ data: [] });
+    }) as unknown as typeof fetch;
+    await expect(fetchRsLongShort(noSpy)).rejects.toThrow("SPY");
+  });
+
+  it("restricts the candidate universe to common stocks (excludes ETFs/funds)", async () => {
+    const bodies: string[] = [];
+    const spy = (async (_url: RequestInfo | URL, init?: RequestInit) => {
+      const body = String(init?.body ?? "");
+      bodies.push(body);
+      if (body.includes("AMEX:SPY")) return jsonResponse({ data: [{ s: "AMEX:SPY", d: [4.0] }] });
+      return jsonResponse({ data: [] });
+    }) as unknown as typeof fetch;
+    await fetchRsLongShort(spy, { limit: 2 });
+    const candidateBodies = bodies.filter((b) => b.includes("sortBy"));
+    expect(candidateBodies.length).toBe(2);
+    expect(candidateBodies.every((b) => b.includes('"type"') && b.includes('"stock"'))).toBe(true);
+  });
 });
