@@ -1,4 +1,4 @@
-const SCANNER_ENDPOINT = "https://scanner.tradingview.com/america/scan";
+import { postScan, num, type FetchFn } from "./tvScanner";
 
 export interface TrendQuote {
   close: number;
@@ -6,20 +6,6 @@ export interface TrendQuote {
   perfW: number; // 1-week performance %
   perfM: number; // 1-month performance %
   perf3M: number; // 3-month performance %
-}
-
-type FetchFn = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
-
-interface ScanRow {
-  s?: string; // exchange-qualified symbol, e.g. "NASDAQ:AVGO"
-  d?: unknown[]; // [name, close, change, Perf.W, Perf.1M, Perf.3M]
-}
-interface ScanResponse {
-  data?: ScanRow[];
-}
-
-function num(v: unknown): number {
-  return typeof v === "number" ? v : 0;
 }
 
 /**
@@ -47,14 +33,7 @@ export async function fetchTradingViewTrend(
     columns: ["name", "close", "change", "Perf.W", "Perf.1M", "Perf.3M"],
     range: [0, Math.max(tickers.length * 2, 60)],
   };
-  const res = await fetchFn(SCANNER_ENDPOINT, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) throw new Error(`TradingView scan returned ${res.status}`);
-
-  const json = (await res.json()) as ScanResponse;
+  const json = await postScan(fetchFn, body);
   for (const row of json.data ?? []) {
     const d = row.d;
     if (!Array.isArray(d)) continue;

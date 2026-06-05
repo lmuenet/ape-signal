@@ -96,6 +96,49 @@ describe("runScan", () => {
     expect(send.mock.calls[0][0]).toContain("AVGO");
   });
 
+  it("appends a Long/Short RS-candidates block when fetchRsLongShort is provided", async () => {
+    let seen = "";
+    await runScan(
+      { label: "T", limit: 5 },
+      {
+        fetchSnapshot: async () =>
+          new Map([["AVGO", { rank: 1, mentions: 100, mentions24hAgo: 80 }]]) as ApewisdomSnapshot,
+        claudeRunner: async (p) => {
+          seen = p;
+          return "";
+        },
+        send: async () => {},
+        fetchRsLongShort: async () => ({
+          spyPerfM: 4,
+          longs: [{ ticker: "STRONG", close: 100, changePct: 3, perfW: 12, perfM: 60, rsM: 56 }],
+          shorts: [{ ticker: "WEAK", close: 10, changePct: -2, perfW: -8, perfM: -30, rsM: -34 }],
+        }),
+      },
+    );
+    expect(seen).toContain("Long-/Short-Kandidaten");
+    expect(seen).toContain("STRONG");
+    expect(seen).toContain("WEAK");
+    expect(seen).toContain("RS +56");
+  });
+
+  it("still sends a report if the RS fetch throws", async () => {
+    const send = vi.fn(async () => {});
+    await runScan(
+      { label: "T", limit: 5 },
+      {
+        fetchSnapshot: async () =>
+          new Map([["AVGO", { rank: 1, mentions: 100, mentions24hAgo: 80 }]]) as ApewisdomSnapshot,
+        claudeRunner: async () =>
+          '```json\n{"summary":"x","verdicts":[{"ticker":"AVGO","verdict":"signal"}]}\n```',
+        send,
+        fetchRsLongShort: async () => {
+          throw new Error("TradingView scan returned 503");
+        },
+      },
+    );
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+
   it("still sends a report (raw list) when claude output cannot be parsed", async () => {
     const fetchSnapshot = vi.fn(async () => fakeSnapshot());
     const claudeRunner = vi.fn(async () => "sorry, no json here");
