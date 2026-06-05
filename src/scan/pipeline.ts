@@ -13,6 +13,7 @@ import { formatReport } from "./format";
 import { offRadar } from "./offradar";
 import type { RedditCandidate } from "../reddit/crawl";
 import type { EarningsRow } from "./earnings";
+import type { RsResult } from "./rsScreener";
 
 export interface ScanOptions {
   label: string;
@@ -28,6 +29,29 @@ export interface ScanDeps {
   crawlReddit?: () => Promise<RedditCandidate[]>;
   fetchEarningsToday?: (tickers: string[]) => Promise<EarningsRow[]>;
   fetchTrend?: (tickers: string[]) => Promise<Map<string, TrendQuote>>;
+  fetchRsLongShort?: () => Promise<RsResult>;
+}
+
+/**
+ * Render the relative-strength long/short candidates (TradingView RS vs SPY,
+ * 1-month) as a briefing section. Returns "" when there's nothing to show.
+ */
+function renderRsBlock(rs: RsResult | null): string {
+  if (!rs || (rs.longs.length === 0 && rs.shorts.length === 0)) return "";
+  const sign = (n: number) => (n >= 0 ? "+" : "") + n.toFixed(1);
+  const line = (c: RsResult["longs"][number]) =>
+    `${c.ticker}: ${c.close.toFixed(2)} (1M ${sign(c.perfM)}%, RS ${sign(c.rsM)}, 1W ${sign(c.perfW)}%, heute ${sign(c.changePct)}%)`;
+  return [
+    "## Long-/Short-Kandidaten (relative Staerke vs. SPY, 1M, TradingView)",
+    `Markt-Benchmark SPY 1M: ${sign(rs.spyPerfM)}%`,
+    "Long (stark vs. Markt):",
+    ...rs.longs.map((c) => "  " + line(c)),
+    "Short (schwach vs. Markt):",
+    ...rs.shorts.map((c) => "  " + line(c)),
+    "",
+    "Mechanische RS/RW-Kandidaten (Momentum relativ zum Markt) — KEIN Trade-Signal;",
+    "pruefe Setup, Katalysator und Trend, bevor du etwas davon ableitest.",
+  ].join("\n");
 }
 
 /**
@@ -100,9 +124,19 @@ export async function runScan(
     }
   }
 
+  let rs: RsResult | null = null;
+  if (deps.fetchRsLongShort) {
+    try {
+      rs = await deps.fetchRsLongShort();
+    } catch (err) {
+      console.error(`[scan] RS candidates fetch failed, continuing without them: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
   const payload = [
     buildTrendingClipboardPayload(combined),
     renderTrendBlock(combined, trend),
+    renderRsBlock(rs),
     GERMAN_DIRECTIVE_TRENDING,
     HEADLESS_JSON_DIRECTIVE,
   ]
