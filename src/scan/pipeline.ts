@@ -30,28 +30,49 @@ export interface ScanDeps {
   fetchEarningsToday?: (tickers: string[]) => Promise<EarningsRow[]>;
   fetchTrend?: (tickers: string[]) => Promise<Map<string, TrendQuote>>;
   fetchRsLongShort?: () => Promise<RsResult>;
+  fetchReadyToTrend?: () => Promise<RsResult>;
 }
 
 /**
- * Render the relative-strength long/short candidates (TradingView RS vs SPY,
- * 1-month) as a briefing section. Returns "" when there's nothing to show.
+ * Render a long/short candidate block (TradingView RS vs SPY data) under the
+ * given title, with a closing note. Returns "" when there's nothing to show.
  */
-function renderRsBlock(rs: RsResult | null): string {
+function renderCandidateBlock(title: string, note: string, rs: RsResult | null): string {
   if (!rs || (rs.longs.length === 0 && rs.shorts.length === 0)) return "";
   const sign = (n: number) => (n >= 0 ? "+" : "") + n.toFixed(1);
   const line = (c: RsResult["longs"][number]) =>
     `${c.ticker}: ${c.close.toFixed(2)} (1M ${sign(c.perfM)}%, RS ${sign(c.rsM)}, 1W ${sign(c.perfW)}%, heute ${sign(c.changePct)}%)`;
   return [
-    "## Long-/Short-Kandidaten (relative Staerke vs. SPY, 1M, TradingView)",
+    `## ${title}`,
     `Markt-Benchmark SPY 1M: ${sign(rs.spyPerfM)}%`,
-    "Long (stark vs. Markt):",
+    "Long:",
     ...rs.longs.map((c) => "  " + line(c)),
-    "Short (schwach vs. Markt):",
+    "Short:",
     ...rs.shorts.map((c) => "  " + line(c)),
     "",
-    "Mechanische RS/RW-Kandidaten (Momentum relativ zum Markt) — KEIN Trade-Signal;",
-    "pruefe Setup, Katalysator und Trend, bevor du etwas davon ableitest.",
+    note,
   ].join("\n");
+}
+
+const RS_TITLE = "Long-/Short-Kandidaten (relative Staerke vs. SPY, 1M, TradingView)";
+const RS_NOTE =
+  "Mechanische RS/RW-Kandidaten (Momentum relativ zum Markt) — KEIN Trade-Signal; pruefe Setup, Katalysator und Trend.";
+const READY_TITLE = "Ready-to-Trend (relative Staerke + Konsolidierung, TradingView)";
+const READY_NOTE =
+  "Starke (1M) bzw. schwache Werte, die aktuell konsolidieren (ruhiger Tag/Woche) — moegliche Trend-Fortsetzung; KEIN Signal, Setup/Katalysator pruefen.";
+
+/** Fetch an optional candidate source, degrading a failure to null (logged). */
+async function safeCandidates(
+  label: string,
+  fetch?: () => Promise<RsResult>,
+): Promise<RsResult | null> {
+  if (!fetch) return null;
+  try {
+    return await fetch();
+  } catch (err) {
+    console.error(`[scan] ${label} fetch failed, continuing without it: ${err instanceof Error ? err.message : String(err)}`);
+    return null;
+  }
 }
 
 /**
@@ -124,19 +145,16 @@ export async function runScan(
     }
   }
 
-  let rs: RsResult | null = null;
-  if (deps.fetchRsLongShort) {
-    try {
-      rs = await deps.fetchRsLongShort();
-    } catch (err) {
-      console.error(`[scan] RS candidates fetch failed, continuing without them: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  }
+  const [rs, ready] = await Promise.all([
+    safeCandidates("RS candidates", deps.fetchRsLongShort),
+    safeCandidates("ready-to-trend", deps.fetchReadyToTrend),
+  ]);
 
   const payload = [
     buildTrendingClipboardPayload(combined),
     renderTrendBlock(combined, trend),
-    renderRsBlock(rs),
+    renderCandidateBlock(RS_TITLE, RS_NOTE, rs),
+    renderCandidateBlock(READY_TITLE, READY_NOTE, ready),
     GERMAN_DIRECTIVE_TRENDING,
     HEADLESS_JSON_DIRECTIVE,
   ]

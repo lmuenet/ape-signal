@@ -21,66 +21,122 @@ export interface RsOptions {
   minAvgVol?: number;
 }
 
-/**
- * Long/short candidates by RELATIVE STRENGTH vs the market, computed from the
- * TradingView scanner (free, no key, reachable from the VPS where ZenBot/other
- * sources are not). Ranking uses 1-month performance vs SPY — deliberately
- * hour-independent so it is meaningful at both the 08:45 and (pre-US-open) 15:15
- * scans, unlike an intraday RS. Longs = strongest vs market, shorts = weakest;
- * the universe is liquid large caps. Throws on a non-ok response so the caller's
- * wrapper can degrade it to "no candidates".
- */
-export async function fetchRsLongShort(fetchFn: FetchFn = fetch, opts: RsOptions = {}): Promise<RsResult> {
-  const limit = opts.limit ?? 8;
-  const minMarketCap = opts.minMarketCap ?? 10_000_000_000;
-  const minAvgVol = opts.minAvgVol ?? 1_000_000;
+type Filter = Array<Record<string, unknown>>;
 
+const COLUMNS = ["name", "close", "change", "Perf.W", "Perf.1M"];
+
+/** SPY's 1-month performance — the market benchmark for relative strength. */
+async function fetchSpyPerfM(fetchFn: FetchFn): Promise<number> {
   const spy = await postScan(fetchFn, {
     symbols: { tickers: ["AMEX:SPY"], query: { types: [] } },
     columns: ["Perf.1M"],
   });
-  const rawSpy = spy.data?.[0]?.d?.[0];
-  if (typeof rawSpy !== "number") {
-    // No benchmark → RS would be meaningless; throw so the caller degrades to no section.
+  const raw = spy.data?.[0]?.d?.[0];
+  if (typeof raw !== "number") {
+    // No benchmark → RS would be meaningless; throw so the caller degrades.
     throw new Error("TradingView scan returned no SPY Perf.1M benchmark");
   }
-  const spyPerfM = rawSpy;
+  return raw;
+}
 
-  const baseFilter = [
+function mapCandidates(resp: ScanResponse, spyPerfM: number): RsCandidate[] {
+  return (resp.data ?? [])
+    .map((row) => {
+      const d = row.d ?? [];
+      const ticker = typeof d[0] === "string" ? d[0] : "";
+      return {
+        ticker,
+        close: num(d[1]),
+        changePct: num(d[2]),
+        perfW: num(d[3]),
+        perfM: num(d[4]),
+        rsM: num(d[4]) - spyPerfM,
+      };
+    })
+    .filter((c) => c.ticker.length > 0);
+}
+
+/** Liquid common stocks only — excludes ETFs/leveraged funds (type "fund"). */
+function liquidity(minMarketCap: number, minAvgVol: number): Filter {
+  return [
     { left: "market_cap_basic", operation: "egreater", right: minMarketCap },
     { left: "average_volume_90d_calc", operation: "egreater", right: minAvgVol },
-    // common stocks only — exclude ETFs / leveraged funds (SPY, TQQQ, …) which
-    // are type "fund" and would otherwise dominate or pollute a stock RS list.
     { left: "type", operation: "equal", right: "stock" },
   ];
-  const columns = ["name", "close", "change", "Perf.W", "Perf.1M"];
+}
+
+/** Run the long (Perf.1M desc) and short (Perf.1M asc) scans for a given filter. */
+async function longShort(
+  fetchFn: FetchFn,
+  filter: Filter,
+  spyPerfM: number,
+  limit: number,
+): Promise<Pick<RsResult, "longs" | "shorts">> {
   const query = (sortOrder: "desc" | "asc") => ({
-    filter: baseFilter,
+    filter,
     sort: { sortBy: "Perf.1M", sortOrder },
     range: [0, limit],
-    columns,
+    columns: COLUMNS,
   });
+  const [longs, shorts] = await Promise.all([postScan(fetchFn, query("desc")), postScan(fetchFn, query("asc"))]);
+  return { longs: mapCandidates(longs, spyPerfM), shorts: mapCandidates(shorts, spyPerfM) };
+}
 
-  const [longsRaw, shortsRaw] = await Promise.all([
-    postScan(fetchFn, query("desc")),
-    postScan(fetchFn, query("asc")),
+/**
+ * Long/short candidates by RELATIVE STRENGTH vs the market (TradingView, free,
+ * no key, VPS-reachable). Ranks liquid large-cap common stocks by 1-month
+ * performance vs SPY — hour-independent so it works at both the 08:45 and the
+ * pre-US-open 15:15 scans. Throws on a non-ok response so the caller can degrade.
+ */
+export async function fetchRsLongShort(fetchFn: FetchFn = fetch, opts: RsOptions = {}): Promise<RsResult> {
+  const limit = opts.limit ?? 8;
+  const spyPerfM = await fetchSpyPerfM(fetchFn);
+  const { longs, shorts } = await longShort(
+    fetchFn,
+    liquidity(opts.minMarketCap ?? 10_000_000_000, opts.minAvgVol ?? 1_000_000),
+    spyPerfM,
+    limit,
+  );
+  return { longs, shorts, spyPerfM };
+}
+
+/**
+ * "Rising Strength / Ready to Trend": established relative strength that is
+ * currently CONSOLIDATING — strong 1-month performance but a quiet today and a
+ * flat-ish week, i.e. coiled for a (re)trend rather than already extended. Shorts
+ * are the mirror (weak 1-month, pausing before continuation down). A smaller-cap
+ * universe than the headline RS scan so it surfaces set-ups, not just mega-caps.
+ */
+export async function fetchReadyToTrend(fetchFn: FetchFn = fetch, opts: RsOptions = {}): Promise<RsResult> {
+  const limit = opts.limit ?? 8;
+  const base = liquidity(opts.minMarketCap ?? 2_000_000_000, opts.minAvgVol ?? 500_000);
+  const spyPerfM = await fetchSpyPerfM(fetchFn);
+
+  const quiet = [
+    { left: "change", operation: "in_range", right: [-2, 2] }, // not popping today
+  ];
+  const longFilter: Filter = [
+    ...base,
+    ...quiet,
+    { left: "Perf.1M", operation: "egreater", right: 8 }, // 1-month strength
+    { left: "Perf.W", operation: "in_range", right: [-3, 4] }, // flat week (pausing)
+  ];
+  const shortFilter: Filter = [
+    ...base,
+    ...quiet,
+    { left: "Perf.1M", operation: "eless", right: -8 }, // 1-month weakness
+    { left: "Perf.W", operation: "in_range", right: [-4, 3] },
+  ];
+
+  const query = (filter: Filter, sortOrder: "desc" | "asc") => ({
+    filter,
+    sort: { sortBy: "Perf.1M", sortOrder },
+    range: [0, limit],
+    columns: COLUMNS,
+  });
+  const [longs, shorts] = await Promise.all([
+    postScan(fetchFn, query(longFilter, "desc")),
+    postScan(fetchFn, query(shortFilter, "asc")),
   ]);
-
-  const map = (resp: ScanResponse): RsCandidate[] =>
-    (resp.data ?? [])
-      .map((row) => {
-        const d = row.d ?? [];
-        const ticker = typeof d[0] === "string" ? d[0] : "";
-        return {
-          ticker,
-          close: num(d[1]),
-          changePct: num(d[2]),
-          perfW: num(d[3]),
-          perfM: num(d[4]),
-          rsM: num(d[4]) - spyPerfM,
-        };
-      })
-      .filter((c) => c.ticker.length > 0);
-
-  return { longs: map(longsRaw), shorts: map(shortsRaw), spyPerfM };
+  return { longs: mapCandidates(longs, spyPerfM), shorts: mapCandidates(shorts, spyPerfM), spyPerfM };
 }

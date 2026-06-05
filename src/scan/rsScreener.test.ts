@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { fetchRsLongShort } from "./rsScreener";
+import { fetchRsLongShort, fetchReadyToTrend } from "./rsScreener";
 
 function jsonResponse(body: unknown, ok = true, status = 200): Response {
   return { ok, status, json: async () => body } as Response;
@@ -65,5 +65,35 @@ describe("fetchRsLongShort", () => {
     const candidateBodies = bodies.filter((b) => b.includes("sortBy"));
     expect(candidateBodies.length).toBe(2);
     expect(candidateBodies.every((b) => b.includes('"type"') && b.includes('"stock"'))).toBe(true);
+  });
+});
+
+describe("fetchReadyToTrend", () => {
+  it("returns consolidating strong longs + weak shorts with RS, using the consolidation filter", async () => {
+    const bodies: string[] = [];
+    const fetchFn = (async (_url: RequestInfo | URL, init?: RequestInit) => {
+      const body = String(init?.body ?? "");
+      bodies.push(body);
+      if (body.includes("AMEX:SPY")) return jsonResponse({ data: [{ s: "AMEX:SPY", d: [4.0] }] });
+      if (body.includes('"asc"')) return jsonResponse({ data: [{ s: "NYSE:WEAK", d: ["WEAK", 10, -1, -2, -30] }] });
+      return jsonResponse({ data: [{ s: "NASDAQ:STRONG", d: ["STRONG", 100, 0.5, 1.2, 40] }] });
+    }) as unknown as typeof fetch;
+    const r = await fetchReadyToTrend(fetchFn, { limit: 3 });
+    expect(r.longs[0]).toMatchObject({ ticker: "STRONG", perfM: 40, rsM: 36 });
+    expect(r.shorts[0]).toMatchObject({ ticker: "WEAK", perfM: -30, rsM: -34 });
+    // candidate queries carry the consolidation criteria (quiet today + 1M strength)
+    const candidateBodies = bodies.filter((b) => b.includes("sortBy"));
+    expect(candidateBodies.every((b) => b.includes("Perf.1M") && b.includes("change") && b.includes("Perf.W"))).toBe(true);
+    // common-stock universe applies here too
+    expect(candidateBodies.every((b) => b.includes('"type"') && b.includes('"stock"'))).toBe(true);
+  });
+
+  it("throws when SPY's benchmark is missing (shared guard)", async () => {
+    const noSpy = (async (_url: RequestInfo | URL, init?: RequestInit) => {
+      const body = String(init?.body ?? "");
+      if (body.includes("AMEX:SPY")) return jsonResponse({ data: [] });
+      return jsonResponse({ data: [] });
+    }) as unknown as typeof fetch;
+    await expect(fetchReadyToTrend(noSpy)).rejects.toThrow("SPY");
   });
 });

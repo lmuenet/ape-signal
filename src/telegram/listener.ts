@@ -16,7 +16,7 @@ import { parseCommand } from "./commands";
 import { readOffset, writeOffset } from "./offset";
 import { runStrategy, formatStrategy, type StrategyDeps } from "../strategy/strategy";
 import { runScan, type ScanDeps } from "../scan/pipeline";
-import { fetchRsLongShort } from "../scan/rsScreener";
+import { fetchRsLongShort, fetchReadyToTrend } from "../scan/rsScreener";
 
 const OFFSET_PATH = process.env.OFFSET_PATH ?? join(process.cwd(), ".telegram-offset");
 const POLL_TIMEOUT = 25; // seconds — long-poll, ~2880 reqs/day
@@ -54,6 +54,7 @@ async function main(): Promise<void> {
     send: (text) => telegram.sendMessage(text),
     fetchTrend: (tickers) => fetchTradingViewTrend(tickers, fetch),
     fetchRsLongShort: () => fetchRsLongShort(fetch),
+    fetchReadyToTrend: () => fetchReadyToTrend(fetch),
   };
 
   let offset = readOffset(OFFSET_PATH);
