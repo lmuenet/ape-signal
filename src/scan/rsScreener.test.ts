@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { fetchRsLongShort, fetchReadyToTrend } from "./rsScreener";
+import { fetchRsLongShort, fetchReadyToTrend, fetchStrongDaily } from "./rsScreener"; // fetchMomentum added in Task 2
 
 function jsonResponse(body: unknown, ok = true, status = 200): Response {
   return { ok, status, json: async () => body } as Response;
@@ -95,5 +95,42 @@ describe("fetchReadyToTrend", () => {
       return jsonResponse({ data: [] });
     }) as unknown as typeof fetch;
     await expect(fetchReadyToTrend(noSpy)).rejects.toThrow("SPY");
+  });
+});
+
+describe("fetchStrongDaily", () => {
+  it("returns uptrend longs + downtrend shorts using a moving-average stack + RS", async () => {
+    const bodies: string[] = [];
+    const fetchFn = (async (_url: RequestInfo | URL, init?: RequestInit) => {
+      const body = String(init?.body ?? "");
+      bodies.push(body);
+      if (body.includes("AMEX:SPY")) return jsonResponse({ data: [{ s: "AMEX:SPY", d: [4.0] }] });
+      if (body.includes('"asc"')) return jsonResponse({ data: [{ s: "NYSE:DOWN", d: ["DOWN", 10, -1, -6, -20] }] });
+      return jsonResponse({ data: [{ s: "NASDAQ:UPTR", d: ["UPTR", 100, 1.0, 5, 30] }] });
+    }) as unknown as typeof fetch;
+
+    const r = await fetchStrongDaily(fetchFn, { limit: 3 });
+    expect(r.spyPerfM).toBe(4);
+    expect(r.longs[0]).toMatchObject({ ticker: "UPTR", perfM: 30, rsM: 26 });
+    expect(r.shorts[0]).toMatchObject({ ticker: "DOWN", perfM: -20, rsM: -24 });
+
+    const candidateBodies = bodies.filter((b) => b.includes("sortBy"));
+    expect(candidateBodies.length).toBe(2);
+    const longBody = candidateBodies.find((b) => b.includes('"desc"'))!;
+    expect(longBody).toContain('"SMA20"');
+    expect(longBody).toContain('"SMA50"');
+    expect(longBody).toContain('"SMA200"');
+    expect(longBody).toContain('"egreater"');
+    expect(longBody).toContain('"sortBy":"Perf.1M"');
+    expect(candidateBodies.every((b) => b.includes('"type"') && b.includes('"stock"'))).toBe(true);
+  });
+
+  it("throws when SPY's benchmark is missing (shared guard)", async () => {
+    const noSpy = (async (_url: RequestInfo | URL, init?: RequestInit) => {
+      const body = String(init?.body ?? "");
+      if (body.includes("AMEX:SPY")) return jsonResponse({ data: [] });
+      return jsonResponse({ data: [] });
+    }) as unknown as typeof fetch;
+    await expect(fetchStrongDaily(noSpy)).rejects.toThrow("SPY");
   });
 });

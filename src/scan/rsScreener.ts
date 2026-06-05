@@ -82,6 +82,29 @@ async function longShort(
   return { longs: mapCandidates(longs, spyPerfM), shorts: mapCandidates(shorts, spyPerfM) };
 }
 
+interface DualScanArgs {
+  longFilter: Filter;
+  shortFilter: Filter;
+  sortBy: string;
+  limit: number;
+  spyPerfM: number;
+}
+
+/** Run a long (desc) + short (asc) pair with DISTINCT filters and a chosen sort field. */
+async function dualScan(fetchFn: FetchFn, args: DualScanArgs): Promise<Pick<RsResult, "longs" | "shorts">> {
+  const query = (filter: Filter, sortOrder: "desc" | "asc") => ({
+    filter,
+    sort: { sortBy: args.sortBy, sortOrder },
+    range: [0, args.limit],
+    columns: COLUMNS,
+  });
+  const [longs, shorts] = await Promise.all([
+    postScan(fetchFn, query(args.longFilter, "desc")),
+    postScan(fetchFn, query(args.shortFilter, "asc")),
+  ]);
+  return { longs: mapCandidates(longs, args.spyPerfM), shorts: mapCandidates(shorts, args.spyPerfM) };
+}
+
 /**
  * Long/short candidates by RELATIVE STRENGTH vs the market (TradingView, free,
  * no key, VPS-reachable). Ranks liquid large-cap common stocks by 1-month
@@ -139,4 +162,35 @@ export async function fetchReadyToTrend(fetchFn: FetchFn = fetch, opts: RsOption
     postScan(fetchFn, query(shortFilter, "asc")),
   ]);
   return { longs: mapCandidates(longs, spyPerfM), shorts: mapCandidates(shorts, spyPerfM), spyPerfM };
+}
+
+/**
+ * "Strong Daily": a clean uptrend in motion — price stacked above its 20/50/200
+ * moving averages with positive relative strength vs SPY (1M). Shorts are the
+ * full mirror (price below a falling MA stack, negative RS). Mid-cap universe so
+ * it surfaces names beyond the mega-cap RS leaderboard. Daily-bar only, so it is
+ * meaningful at both the 08:45 and the pre-US-open 15:15 scans.
+ */
+export async function fetchStrongDaily(fetchFn: FetchFn = fetch, opts: RsOptions = {}): Promise<RsResult> {
+  const limit = opts.limit ?? 8;
+  const base = liquidity(opts.minMarketCap ?? 2_000_000_000, opts.minAvgVol ?? 500_000);
+  const spyPerfM = await fetchSpyPerfM(fetchFn);
+
+  const longFilter: Filter = [
+    ...base,
+    { left: "close", operation: "egreater", right: "SMA20" },
+    { left: "SMA20", operation: "egreater", right: "SMA50" },
+    { left: "SMA50", operation: "egreater", right: "SMA200" },
+    { left: "Perf.1M", operation: "egreater", right: spyPerfM }, // positive RS vs market
+  ];
+  const shortFilter: Filter = [
+    ...base,
+    { left: "close", operation: "eless", right: "SMA20" },
+    { left: "SMA20", operation: "eless", right: "SMA50" },
+    { left: "SMA50", operation: "eless", right: "SMA200" },
+    { left: "Perf.1M", operation: "eless", right: spyPerfM },
+  ];
+
+  const { longs, shorts } = await dualScan(fetchFn, { longFilter, shortFilter, sortBy: "Perf.1M", limit, spyPerfM });
+  return { longs, shorts, spyPerfM };
 }
