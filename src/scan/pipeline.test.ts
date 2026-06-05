@@ -144,7 +144,7 @@ describe("runScan", () => {
     expect(seen).toContain("COILED");
   });
 
-  it("still sends a report if the RS fetch throws", async () => {
+  it("still sends a report if BOTH the RS and Ready-to-Trend fetches throw", async () => {
     const send = vi.fn(async () => {});
     await runScan(
       { label: "T", limit: 5 },
@@ -155,6 +155,9 @@ describe("runScan", () => {
           '```json\n{"summary":"x","verdicts":[{"ticker":"AVGO","verdict":"signal"}]}\n```',
         send,
         fetchRsLongShort: async () => {
+          throw new Error("TradingView scan returned 503");
+        },
+        fetchReadyToTrend: async () => {
           throw new Error("TradingView scan returned 503");
         },
       },

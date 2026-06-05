@@ -84,5 +84,16 @@ describe("fetchReadyToTrend", () => {
     // candidate queries carry the consolidation criteria (quiet today + 1M strength)
     const candidateBodies = bodies.filter((b) => b.includes("sortBy"));
     expect(candidateBodies.every((b) => b.includes("Perf.1M") && b.includes("change") && b.includes("Perf.W"))).toBe(true);
+    // common-stock universe applies here too
+    expect(candidateBodies.every((b) => b.includes('"type"') && b.includes('"stock"'))).toBe(true);
+  });
+
+  it("throws when SPY's benchmark is missing (shared guard)", async () => {
+    const noSpy = (async (_url: RequestInfo | URL, init?: RequestInit) => {
+      const body = String(init?.body ?? "");
+      if (body.includes("AMEX:SPY")) return jsonResponse({ data: [] });
+      return jsonResponse({ data: [] });
+    }) as unknown as typeof fetch;
+    await expect(fetchReadyToTrend(noSpy)).rejects.toThrow("SPY");
   });
 });
