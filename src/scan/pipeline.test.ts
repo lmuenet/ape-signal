@@ -121,6 +121,29 @@ describe("runScan", () => {
     expect(seen).toContain("RS +56");
   });
 
+  it("appends a Ready-to-Trend block when fetchReadyToTrend is provided", async () => {
+    let seen = "";
+    await runScan(
+      { label: "T", limit: 5 },
+      {
+        fetchSnapshot: async () =>
+          new Map([["AVGO", { rank: 1, mentions: 100, mentions24hAgo: 80 }]]) as ApewisdomSnapshot,
+        claudeRunner: async (p) => {
+          seen = p;
+          return "";
+        },
+        send: async () => {},
+        fetchReadyToTrend: async () => ({
+          spyPerfM: 4,
+          longs: [{ ticker: "COILED", close: 50, changePct: 0.4, perfW: 1.1, perfM: 30, rsM: 26 }],
+          shorts: [],
+        }),
+      },
+    );
+    expect(seen).toContain("Ready-to-Trend");
+    expect(seen).toContain("COILED");
+  });
+
   it("still sends a report if the RS fetch throws", async () => {
     const send = vi.fn(async () => {});
     await runScan(

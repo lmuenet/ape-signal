@@ -4,7 +4,7 @@ import { fetchApewisdomSnapshot, fetchNextEarnings, fetchTradingViewTrend } from
 import { createTelegramClient } from "../telegram/client";
 import { spawnClaudeRunner } from "../claude/invoke";
 import { runScan, type ScanDeps } from "./pipeline";
-import { fetchRsLongShort } from "./rsScreener";
+import { fetchRsLongShort, fetchReadyToTrend } from "./rsScreener";
 import { createRedditApiRunner } from "../reddit/redditApi";
 import { crawlReddit, type RedditCandidate } from "../reddit/crawl";
 import { fetchEarningsToday } from "./earnings";
@@ -33,6 +33,7 @@ async function main(): Promise<void> {
     fetchTrend: (tickers) => fetchTradingViewTrend(tickers, fetch),
     // Long/short relative-strength candidates vs SPY (TradingView, free, no key).
     fetchRsLongShort: () => fetchRsLongShort(fetch),
+    fetchReadyToTrend: () => fetchReadyToTrend(fetch),
   };
 
   // Reddit off-radar via the Reddit OAuth API: opt-in (ENABLE_REDDIT_CRAWL).
