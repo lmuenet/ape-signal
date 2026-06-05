@@ -65,23 +65,6 @@ function liquidity(minMarketCap: number, minAvgVol: number): Filter {
   ];
 }
 
-/** Run the long (Perf.1M desc) and short (Perf.1M asc) scans for a given filter. */
-async function longShort(
-  fetchFn: FetchFn,
-  filter: Filter,
-  spyPerfM: number,
-  limit: number,
-): Promise<Pick<RsResult, "longs" | "shorts">> {
-  const query = (sortOrder: "desc" | "asc") => ({
-    filter,
-    sort: { sortBy: "Perf.1M", sortOrder },
-    range: [0, limit],
-    columns: COLUMNS,
-  });
-  const [longs, shorts] = await Promise.all([postScan(fetchFn, query("desc")), postScan(fetchFn, query("asc"))]);
-  return { longs: mapCandidates(longs, spyPerfM), shorts: mapCandidates(shorts, spyPerfM) };
-}
-
 interface DualScanArgs {
   longFilter: Filter;
   shortFilter: Filter;
@@ -114,12 +97,14 @@ async function dualScan(fetchFn: FetchFn, args: DualScanArgs): Promise<Pick<RsRe
 export async function fetchRsLongShort(fetchFn: FetchFn = fetch, opts: RsOptions = {}): Promise<RsResult> {
   const limit = opts.limit ?? 8;
   const spyPerfM = await fetchSpyPerfM(fetchFn);
-  const { longs, shorts } = await longShort(
-    fetchFn,
-    liquidity(opts.minMarketCap ?? 10_000_000_000, opts.minAvgVol ?? 1_000_000),
-    spyPerfM,
+  const filter = liquidity(opts.minMarketCap ?? 10_000_000_000, opts.minAvgVol ?? 1_000_000);
+  const { longs, shorts } = await dualScan(fetchFn, {
+    longFilter: filter,
+    shortFilter: filter,
+    sortBy: "Perf.1M",
     limit,
-  );
+    spyPerfM,
+  });
   return { longs, shorts, spyPerfM };
 }
 
@@ -151,17 +136,8 @@ export async function fetchReadyToTrend(fetchFn: FetchFn = fetch, opts: RsOption
     { left: "Perf.W", operation: "in_range", right: [-4, 3] },
   ];
 
-  const query = (filter: Filter, sortOrder: "desc" | "asc") => ({
-    filter,
-    sort: { sortBy: "Perf.1M", sortOrder },
-    range: [0, limit],
-    columns: COLUMNS,
-  });
-  const [longs, shorts] = await Promise.all([
-    postScan(fetchFn, query(longFilter, "desc")),
-    postScan(fetchFn, query(shortFilter, "asc")),
-  ]);
-  return { longs: mapCandidates(longs, spyPerfM), shorts: mapCandidates(shorts, spyPerfM), spyPerfM };
+  const { longs, shorts } = await dualScan(fetchFn, { longFilter, shortFilter, sortBy: "Perf.1M", limit, spyPerfM });
+  return { longs, shorts, spyPerfM };
 }
 
 /**
@@ -188,7 +164,7 @@ export async function fetchStrongDaily(fetchFn: FetchFn = fetch, opts: RsOptions
     { left: "close", operation: "eless", right: "SMA20" },
     { left: "SMA20", operation: "eless", right: "SMA50" },
     { left: "SMA50", operation: "eless", right: "SMA200" },
-    { left: "Perf.1M", operation: "eless", right: spyPerfM },
+    { left: "Perf.1M", operation: "eless", right: spyPerfM }, // negative RS vs market
   ];
 
   const { longs, shorts } = await dualScan(fetchFn, { longFilter, shortFilter, sortBy: "Perf.1M", limit, spyPerfM });

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { fetchRsLongShort, fetchReadyToTrend, fetchStrongDaily } from "./rsScreener"; // fetchMomentum added in Task 2
+import { fetchRsLongShort, fetchReadyToTrend, fetchStrongDaily } from "./rsScreener";
 
 function jsonResponse(body: unknown, ok = true, status = 200): Response {
   return { ok, status, json: async () => body } as Response;
@@ -122,6 +122,8 @@ describe("fetchStrongDaily", () => {
     expect(longBody).toContain('"SMA200"');
     expect(longBody).toContain('"egreater"');
     expect(longBody).toContain('"sortBy":"Perf.1M"');
+    const shortBody = candidateBodies.find((b) => b.includes('"asc"'))!;
+    expect(shortBody).toContain('"eless"');
     expect(candidateBodies.every((b) => b.includes('"type"') && b.includes('"stock"'))).toBe(true);
   });
 
