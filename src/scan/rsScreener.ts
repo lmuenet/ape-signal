@@ -170,3 +170,31 @@ export async function fetchStrongDaily(fetchFn: FetchFn = fetch, opts: RsOptions
   const { longs, shorts } = await dualScan(fetchFn, { longFilter, shortFilter, sortBy: "Perf.1M", limit, spyPerfM });
   return { longs, shorts, spyPerfM };
 }
+
+/**
+ * "Momentum": relative strength that is freshly ACCELERATING — a strong month
+ * AND a strong week (recent thrust), the opposite of Ready-to-Trend's
+ * consolidation. Ranked by the week (Perf.W) so the freshest movers surface
+ * first. Shorts mirror (sharp month + week down). Daily-bar only.
+ */
+export async function fetchMomentum(fetchFn: FetchFn = fetch, opts: RsOptions = {}): Promise<RsResult> {
+  const limit = opts.limit ?? 8;
+  const base = liquidity(opts.minMarketCap ?? 2_000_000_000, opts.minAvgVol ?? 500_000);
+  const spyPerfM = await fetchSpyPerfM(fetchFn);
+
+  const longFilter: Filter = [
+    ...base,
+    { left: "Perf.1M", operation: "egreater", right: 10 },       // strong month
+    { left: "Perf.1M", operation: "egreater", right: spyPerfM }, // positive RS vs market
+    { left: "Perf.W", operation: "egreater", right: 4 },         // accelerating week
+  ];
+  const shortFilter: Filter = [
+    ...base,
+    { left: "Perf.1M", operation: "eless", right: -10 },
+    { left: "Perf.1M", operation: "eless", right: spyPerfM },
+    { left: "Perf.W", operation: "eless", right: -4 },
+  ];
+
+  const { longs, shorts } = await dualScan(fetchFn, { longFilter, shortFilter, sortBy: "Perf.W", limit, spyPerfM });
+  return { longs, shorts, spyPerfM };
+}

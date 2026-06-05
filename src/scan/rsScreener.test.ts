@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { fetchRsLongShort, fetchReadyToTrend, fetchStrongDaily } from "./rsScreener";
+import { fetchRsLongShort, fetchReadyToTrend, fetchStrongDaily, fetchMomentum } from "./rsScreener";
 
 function jsonResponse(body: unknown, ok = true, status = 200): Response {
   return { ok, status, json: async () => body } as Response;
@@ -134,5 +134,43 @@ describe("fetchStrongDaily", () => {
       return jsonResponse({ data: [] });
     }) as unknown as typeof fetch;
     await expect(fetchStrongDaily(noSpy)).rejects.toThrow("SPY");
+  });
+});
+
+describe("fetchMomentum", () => {
+  it("returns accelerating longs (strong month + week) sorted by Perf.W, shorts mirror", async () => {
+    const bodies: string[] = [];
+    const fetchFn = (async (_url: RequestInfo | URL, init?: RequestInit) => {
+      const body = String(init?.body ?? "");
+      bodies.push(body);
+      if (body.includes("AMEX:SPY")) return jsonResponse({ data: [{ s: "AMEX:SPY", d: [4.0] }] });
+      if (body.includes('"asc"')) return jsonResponse({ data: [{ s: "NYSE:DUMP", d: ["DUMP", 10, -3, -9, -25] }] });
+      return jsonResponse({ data: [{ s: "NASDAQ:HOT", d: ["HOT", 100, 4, 12, 35] }] });
+    }) as unknown as typeof fetch;
+
+    const r = await fetchMomentum(fetchFn, { limit: 3 });
+    expect(r.longs[0]).toMatchObject({ ticker: "HOT", perfW: 12, perfM: 35, rsM: 31 });
+    expect(r.shorts[0]).toMatchObject({ ticker: "DUMP", perfW: -9, perfM: -25, rsM: -29 });
+
+    const candidateBodies = bodies.filter((b) => b.includes("sortBy"));
+    expect(candidateBodies.length).toBe(2);
+    // momentum sorts by the WEEK (the acceleration differentiator), and filters on both windows
+    expect(candidateBodies.every((b) => b.includes('"sortBy":"Perf.W"'))).toBe(true);
+    expect(candidateBodies.every((b) => b.includes("Perf.1M") && b.includes("Perf.W"))).toBe(true);
+    expect(candidateBodies.every((b) => b.includes('"type"') && b.includes('"stock"'))).toBe(true);
+    // long side filters with egreater, short side with eless (mirror)
+    const longBody = candidateBodies.find((b) => b.includes('"desc"'))!;
+    const shortBody = candidateBodies.find((b) => b.includes('"asc"'))!;
+    expect(longBody).toContain('"egreater"');
+    expect(shortBody).toContain('"eless"');
+  });
+
+  it("throws when SPY's benchmark is missing (shared guard)", async () => {
+    const noSpy = (async (_url: RequestInfo | URL, init?: RequestInit) => {
+      const body = String(init?.body ?? "");
+      if (body.includes("AMEX:SPY")) return jsonResponse({ data: [] });
+      return jsonResponse({ data: [] });
+    }) as unknown as typeof fetch;
+    await expect(fetchMomentum(noSpy)).rejects.toThrow("SPY");
   });
 });
