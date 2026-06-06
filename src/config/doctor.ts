@@ -1,5 +1,6 @@
 // src/config/doctor.ts — self-host diagnostics ("npm run doctor").
 // Pure, dependency-injected checks + a thin entrypoint. No new runtime deps.
+import { loadEnv } from "./env";
 
 export type CheckStatus = "ok" | "warn" | "fail";
 export interface CheckResult { name: string; status: CheckStatus; detail: string; }
@@ -44,4 +45,50 @@ export function formatResults(results: CheckResult[]): string {
 /** True if any check hard-failed (used for the process exit code). */
 export function hasFailure(results: CheckResult[]): boolean {
   return results.some((r) => r.status === "fail");
+}
+
+/** Required env present (Telegram). Hard-fail with the list of what's missing. */
+export function checkRequiredEnv(source: Record<string, string | undefined>): CheckResult {
+  try {
+    loadEnv(source);
+    return { name: "Required env", status: "ok", detail: "TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID present" };
+  } catch (err) {
+    return { name: "Required env", status: "fail", detail: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+/** Claude CLI installed AND authenticated as the current user (one probe). */
+export async function checkClaude(runner: Runner): Promise<CheckResult> {
+  try {
+    const out = await runner("Reply with the single word: OK");
+    if (out.trim() === "") {
+      return { name: "Claude CLI", status: "fail", detail: "claude -p returned empty output" };
+    }
+    return { name: "Claude CLI", status: "ok", detail: "claude -p responded" };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return { name: "Claude CLI", status: "fail", detail: `${msg} — is Claude Code installed and logged in as this user?` };
+  }
+}
+
+const TG_API = "https://api.telegram.org";
+
+interface TgResponse { ok?: boolean; description?: string; result?: { username?: string; type?: string } }
+
+async function tgGet(url: string, fetchFn: typeof fetch): Promise<TgResponse> {
+  const res = await fetchFn(url);
+  return (await res.json().catch(() => ({}))) as TgResponse;
+}
+
+/** Telegram bot token valid (getMe) + chat reachable (getChat). Silent. */
+export async function checkTelegram(botToken: string, chatId: string, fetchFn: typeof fetch): Promise<CheckResult> {
+  try {
+    const me = await tgGet(`${TG_API}/bot${botToken}/getMe`, fetchFn);
+    if (!me.ok) return { name: "Telegram", status: "fail", detail: `getMe: ${me.description ?? "token rejected"}` };
+    const chat = await tgGet(`${TG_API}/bot${botToken}/getChat?chat_id=${encodeURIComponent(chatId)}`, fetchFn);
+    if (!chat.ok) return { name: "Telegram", status: "fail", detail: `getChat: ${chat.description ?? "chat not found"}` };
+    return { name: "Telegram", status: "ok", detail: `bot @${me.result?.username ?? "?"} → chat ${chatId} (${chat.result?.type ?? "?"})` };
+  } catch (err) {
+    return { name: "Telegram", status: "fail", detail: err instanceof Error ? err.message : String(err) };
+  }
 }
