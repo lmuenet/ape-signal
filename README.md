@@ -52,17 +52,40 @@ Code reuse: `ape-intel` is embedded as a git **submodule** at
 | `vendor/ape-intel/` | git submodule (shared `lib`) |
 | `docs/` | Design spec + implementation plans |
 
-## Setup (VPS)
+## Self-hosting in a few commands
 
-See the design spec §5-A. In short: Node 20+, `gh`/git, Claude Code CLI
-(`claude login` → subscription), secrets in `/etc/ape-signal.env` (chmod 600),
-systemd timers + service.
+Runs on a **Debian/Ubuntu VPS with systemd**. You run your own Claude
+subscription and your own API keys.
 
-Clone with submodules:
+**Prerequisites**
+- Node.js ≥ 20 and `git`.
+- **Claude Code CLI installed and logged in** (`claude login`, paste the token)
+  **as the same OS user the services run as**. This is the LLM backend; there is
+  no API key.
+- A Telegram bot + chat id (from [@BotFather](https://t.me/BotFather)).
+- Optional: a Finnhub API key (earnings/news) and a Reddit "script" OAuth app.
+
+**Steps** — clone to `/opt/ape-signal` (the systemd units hardcode that path) and
+run as root:
 
 ```bash
-git clone --recurse-submodules https://github.com/lmuenet/ape-signal.git
+sudo git clone --recurse-submodules https://github.com/lmuenet/ape-signal.git /opt/ape-signal
+cd /opt/ape-signal
+sudo ./scripts/setup.sh            # installs deps + systemd units; creates /etc/ape-signal.env on first run
+sudo nano /etc/ape-signal.env      # fill in your Telegram (and optional) secrets
+sudo ./scripts/setup.sh            # re-run: enables the services and validates everything
 ```
+
+Validate config at any time:
+
+```bash
+npm run doctor                       # uses /etc/ape-signal.env or ./.env
+npm run doctor -- --send-test        # also posts a visible Telegram test message
+```
+
+The scans run as systemd timers (Mon–Fri 08:45 & 15:15 Europe/Berlin); the
+listener is a long-running service. See [`systemd/README.md`](systemd/README.md)
+for the per-unit details.
 
 ## Disclaimer
 

@@ -7,6 +7,7 @@
   "scripts": {
     "scan": "tsx src/scan/index.ts",
     "listener": "tsx src/telegram/listener.ts",
+    "doctor": "tsx src/config/doctor.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },

@@ -16,7 +16,7 @@ function val(source: Record<string, string | undefined>, key: string): string | 
   return v && v.trim() !== "" ? v : undefined;
 }
 
-function truthy(v: string | undefined): boolean {
+export function truthy(v: string | undefined): boolean {
   if (!v) return false;
   const t = v.trim().toLowerCase();
   return t === "1" || t === "true" || t === "on" || t === "yes";
