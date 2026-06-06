@@ -184,8 +184,11 @@ describe("runScan", () => {
     expect(seen).toContain("HOT");
   });
 
-  it("still sends a report if BOTH the RS and Ready-to-Trend fetches throw", async () => {
+  it("still sends a report if ALL FOUR candidate fetches throw", async () => {
     const send = vi.fn(async () => {});
+    const boom = async (): Promise<never> => {
+      throw new Error("TradingView scan returned 503");
+    };
     await runScan(
       { label: "T", limit: 5 },
       {
@@ -194,12 +197,10 @@ describe("runScan", () => {
         claudeRunner: async () =>
           '```json\n{"summary":"x","verdicts":[{"ticker":"AVGO","verdict":"signal"}]}\n```',
         send,
-        fetchRsLongShort: async () => {
-          throw new Error("TradingView scan returned 503");
-        },
-        fetchReadyToTrend: async () => {
-          throw new Error("TradingView scan returned 503");
-        },
+        fetchRsLongShort: boom,
+        fetchReadyToTrend: boom,
+        fetchStrongDaily: boom,
+        fetchMomentum: boom,
       },
     );
     expect(send).toHaveBeenCalledTimes(1);
