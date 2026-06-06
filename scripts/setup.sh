@@ -5,6 +5,7 @@
 set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+EXPECTED_DIR="/opt/ape-signal"   # the systemd units hardcode WorkingDirectory=/opt/ape-signal
 ENV_PATH="/etc/ape-signal.env"
 UNIT_SRC="$REPO_DIR/systemd"
 UNIT_DST="/etc/systemd/system"
@@ -23,7 +24,16 @@ command -v claude >/dev/null 2>&1 \
   || fail "claude CLI not found. Install Claude Code and run 'claude login' as this user."
 echo "OK: git, node $(node -v), claude present"
 
+# The shipped systemd units hardcode /opt/ape-signal. Warn (don't fail — the user
+# may have edited the units) so a wrong clone location doesn't silently break the
+# services after they're enabled.
+if [ "$REPO_DIR" != "$EXPECTED_DIR" ]; then
+  printf 'WARNING: repo is at %s but the systemd units expect %s.\n' "$REPO_DIR" "$EXPECTED_DIR" >&2
+  printf '         Clone to %s, or edit WorkingDirectory in systemd/*.service, or the services will fail.\n' "$EXPECTED_DIR" >&2
+fi
+
 if [ "$CHECK_ONLY" = "1" ]; then
+  # Reads the root-owned 600 env file — run as the same (root) user as the rest.
   say "Running doctor (check-only)"
   npm --prefix "$REPO_DIR" run --silent doctor -- --env-file="$ENV_PATH" || true
   exit 0
@@ -52,6 +62,8 @@ sudo systemctl enable --now ape-signal-scan-preopen.timer ape-signal-scan-preus.
 sudo systemctl enable --now ape-signal-listener.service
 
 say "Validating configuration"
+# On a slow/cold VPS the Claude probe can be slow; if this aborts, the services
+# are already installed+enabled — just re-run `./scripts/setup.sh --check`.
 npm --prefix "$REPO_DIR" run --silent doctor -- --env-file="$ENV_PATH"
 
 say "Done"

@@ -65,14 +65,15 @@ subscription and your own API keys.
 - A Telegram bot + chat id (from [@BotFather](https://t.me/BotFather)).
 - Optional: a Finnhub API key (earnings/news) and a Reddit "script" OAuth app.
 
-**Steps**
+**Steps** — clone to `/opt/ape-signal` (the systemd units hardcode that path) and
+run as root:
 
 ```bash
-git clone --recurse-submodules https://github.com/lmuenet/ape-signal.git
-cd ape-signal
-./scripts/setup.sh            # installs deps + systemd units; creates /etc/ape-signal.env on first run
-sudo nano /etc/ape-signal.env # fill in your Telegram (and optional) secrets
-./scripts/setup.sh            # re-run: enables the services and validates everything
+sudo git clone --recurse-submodules https://github.com/lmuenet/ape-signal.git /opt/ape-signal
+cd /opt/ape-signal
+sudo ./scripts/setup.sh            # installs deps + systemd units; creates /etc/ape-signal.env on first run
+sudo nano /etc/ape-signal.env      # fill in your Telegram (and optional) secrets
+sudo ./scripts/setup.sh            # re-run: enables the services and validates everything
 ```
 
 Validate config at any time:
