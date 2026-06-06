@@ -31,6 +31,8 @@ export interface ScanDeps {
   fetchTrend?: (tickers: string[]) => Promise<Map<string, TrendQuote>>;
   fetchRsLongShort?: () => Promise<RsResult>;
   fetchReadyToTrend?: () => Promise<RsResult>;
+  fetchStrongDaily?: () => Promise<RsResult>;
+  fetchMomentum?: () => Promise<RsResult>;
 }
 
 /**
@@ -60,6 +62,12 @@ const RS_NOTE =
 const READY_TITLE = "Ready-to-Trend (relative Staerke + Konsolidierung, TradingView)";
 const READY_NOTE =
   "Starke (1M) bzw. schwache Werte, die aktuell konsolidieren (ruhiger Tag/Woche) — moegliche Trend-Fortsetzung; KEIN Signal, Setup/Katalysator pruefen.";
+const STRONG_TITLE = "Strong Daily (Trend-Qualitaet: Kurs ueber GD20/50/200 + RS, TradingView)";
+const STRONG_NOTE =
+  "Saubere Aufwaerts- (long) bzw. Abwaertstrends (short) — Kurs ueber/unter dem GD-Stapel 20/50/200 mit relativer Staerke; KEIN Signal, Setup/Katalysator pruefen.";
+const MOMENTUM_TITLE = "Momentum (beschleunigende relative Staerke, TradingView)";
+const MOMENTUM_NOTE =
+  "Starker Monat UND starke Woche (frischer Schub) — moegliches fruehes Momentum; KEIN Signal, Setup/Katalysator pruefen.";
 
 /** Fetch an optional candidate source, degrading a failure to null (logged). */
 async function safeCandidates(
@@ -145,9 +153,11 @@ export async function runScan(
     }
   }
 
-  const [rs, ready] = await Promise.all([
+  const [rs, ready, strong, momentum] = await Promise.all([
     safeCandidates("RS candidates", deps.fetchRsLongShort),
     safeCandidates("ready-to-trend", deps.fetchReadyToTrend),
+    safeCandidates("strong-daily", deps.fetchStrongDaily),
+    safeCandidates("momentum", deps.fetchMomentum),
   ]);
 
   const payload = [
@@ -155,6 +165,8 @@ export async function runScan(
     renderTrendBlock(combined, trend),
     renderCandidateBlock(RS_TITLE, RS_NOTE, rs),
     renderCandidateBlock(READY_TITLE, READY_NOTE, ready),
+    renderCandidateBlock(STRONG_TITLE, STRONG_NOTE, strong),
+    renderCandidateBlock(MOMENTUM_TITLE, MOMENTUM_NOTE, momentum),
     GERMAN_DIRECTIVE_TRENDING,
     HEADLESS_JSON_DIRECTIVE,
   ]

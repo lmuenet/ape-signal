@@ -65,21 +65,27 @@ function liquidity(minMarketCap: number, minAvgVol: number): Filter {
   ];
 }
 
-/** Run the long (Perf.1M desc) and short (Perf.1M asc) scans for a given filter. */
-async function longShort(
-  fetchFn: FetchFn,
-  filter: Filter,
-  spyPerfM: number,
-  limit: number,
-): Promise<Pick<RsResult, "longs" | "shorts">> {
-  const query = (sortOrder: "desc" | "asc") => ({
+interface DualScanArgs {
+  longFilter: Filter;
+  shortFilter: Filter;
+  sortBy: string;
+  limit: number;
+  spyPerfM: number;
+}
+
+/** Run a long (desc) + short (asc) pair with DISTINCT filters and a chosen sort field. */
+async function dualScan(fetchFn: FetchFn, args: DualScanArgs): Promise<Pick<RsResult, "longs" | "shorts">> {
+  const query = (filter: Filter, sortOrder: "desc" | "asc") => ({
     filter,
-    sort: { sortBy: "Perf.1M", sortOrder },
-    range: [0, limit],
+    sort: { sortBy: args.sortBy, sortOrder },
+    range: [0, args.limit],
     columns: COLUMNS,
   });
-  const [longs, shorts] = await Promise.all([postScan(fetchFn, query("desc")), postScan(fetchFn, query("asc"))]);
-  return { longs: mapCandidates(longs, spyPerfM), shorts: mapCandidates(shorts, spyPerfM) };
+  const [longs, shorts] = await Promise.all([
+    postScan(fetchFn, query(args.longFilter, "desc")),
+    postScan(fetchFn, query(args.shortFilter, "asc")),
+  ]);
+  return { longs: mapCandidates(longs, args.spyPerfM), shorts: mapCandidates(shorts, args.spyPerfM) };
 }
 
 /**
@@ -91,12 +97,14 @@ async function longShort(
 export async function fetchRsLongShort(fetchFn: FetchFn = fetch, opts: RsOptions = {}): Promise<RsResult> {
   const limit = opts.limit ?? 8;
   const spyPerfM = await fetchSpyPerfM(fetchFn);
-  const { longs, shorts } = await longShort(
-    fetchFn,
-    liquidity(opts.minMarketCap ?? 10_000_000_000, opts.minAvgVol ?? 1_000_000),
-    spyPerfM,
+  const filter = liquidity(opts.minMarketCap ?? 10_000_000_000, opts.minAvgVol ?? 1_000_000);
+  const { longs, shorts } = await dualScan(fetchFn, {
+    longFilter: filter,
+    shortFilter: filter,
+    sortBy: "Perf.1M",
     limit,
-  );
+    spyPerfM,
+  });
   return { longs, shorts, spyPerfM };
 }
 
@@ -128,15 +136,65 @@ export async function fetchReadyToTrend(fetchFn: FetchFn = fetch, opts: RsOption
     { left: "Perf.W", operation: "in_range", right: [-4, 3] },
   ];
 
-  const query = (filter: Filter, sortOrder: "desc" | "asc") => ({
-    filter,
-    sort: { sortBy: "Perf.1M", sortOrder },
-    range: [0, limit],
-    columns: COLUMNS,
-  });
-  const [longs, shorts] = await Promise.all([
-    postScan(fetchFn, query(longFilter, "desc")),
-    postScan(fetchFn, query(shortFilter, "asc")),
-  ]);
-  return { longs: mapCandidates(longs, spyPerfM), shorts: mapCandidates(shorts, spyPerfM), spyPerfM };
+  const { longs, shorts } = await dualScan(fetchFn, { longFilter, shortFilter, sortBy: "Perf.1M", limit, spyPerfM });
+  return { longs, shorts, spyPerfM };
+}
+
+/**
+ * "Strong Daily": a clean uptrend in motion — price stacked above its 20/50/200
+ * moving averages with positive relative strength vs SPY (1M). Shorts are the
+ * full mirror (price below a falling MA stack, negative RS). Mid-cap universe so
+ * it surfaces names beyond the mega-cap RS leaderboard. Daily-bar only, so it is
+ * meaningful at both the 08:45 and the pre-US-open 15:15 scans.
+ */
+export async function fetchStrongDaily(fetchFn: FetchFn = fetch, opts: RsOptions = {}): Promise<RsResult> {
+  const limit = opts.limit ?? 8;
+  const base = liquidity(opts.minMarketCap ?? 2_000_000_000, opts.minAvgVol ?? 500_000);
+  const spyPerfM = await fetchSpyPerfM(fetchFn);
+
+  const longFilter: Filter = [
+    ...base,
+    { left: "close", operation: "egreater", right: "SMA20" },
+    { left: "SMA20", operation: "egreater", right: "SMA50" },
+    { left: "SMA50", operation: "egreater", right: "SMA200" },
+    { left: "Perf.1M", operation: "egreater", right: spyPerfM }, // positive RS vs market
+  ];
+  const shortFilter: Filter = [
+    ...base,
+    { left: "close", operation: "eless", right: "SMA20" },
+    { left: "SMA20", operation: "eless", right: "SMA50" },
+    { left: "SMA50", operation: "eless", right: "SMA200" },
+    { left: "Perf.1M", operation: "eless", right: spyPerfM }, // negative RS vs market
+  ];
+
+  const { longs, shorts } = await dualScan(fetchFn, { longFilter, shortFilter, sortBy: "Perf.1M", limit, spyPerfM });
+  return { longs, shorts, spyPerfM };
+}
+
+/**
+ * "Momentum": relative strength that is freshly ACCELERATING — a strong month
+ * AND a strong week (recent thrust), the opposite of Ready-to-Trend's
+ * consolidation. Ranked by the week (Perf.W) so the freshest movers surface
+ * first. Shorts mirror (sharp month + week down). Daily-bar only.
+ */
+export async function fetchMomentum(fetchFn: FetchFn = fetch, opts: RsOptions = {}): Promise<RsResult> {
+  const limit = opts.limit ?? 8;
+  const base = liquidity(opts.minMarketCap ?? 2_000_000_000, opts.minAvgVol ?? 500_000);
+  const spyPerfM = await fetchSpyPerfM(fetchFn);
+
+  const longFilter: Filter = [
+    ...base,
+    { left: "Perf.1M", operation: "egreater", right: 10 },       // strong month
+    { left: "Perf.1M", operation: "egreater", right: spyPerfM }, // positive RS vs market
+    { left: "Perf.W", operation: "egreater", right: 4 },         // accelerating week
+  ];
+  const shortFilter: Filter = [
+    ...base,
+    { left: "Perf.1M", operation: "eless", right: -10 },
+    { left: "Perf.1M", operation: "eless", right: spyPerfM },
+    { left: "Perf.W", operation: "eless", right: -4 },
+  ];
+
+  const { longs, shorts } = await dualScan(fetchFn, { longFilter, shortFilter, sortBy: "Perf.W", limit, spyPerfM });
+  return { longs, shorts, spyPerfM };
 }

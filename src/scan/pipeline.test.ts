@@ -144,8 +144,51 @@ describe("runScan", () => {
     expect(seen).toContain("COILED");
   });
 
-  it("still sends a report if BOTH the RS and Ready-to-Trend fetches throw", async () => {
+  it("appends a Strong Daily block when fetchStrongDaily is provided", async () => {
+    let seen = "";
+    await runScan(
+      { label: "T", limit: 5 },
+      {
+        fetchSnapshot: async () =>
+          new Map([["AVGO", { rank: 1, mentions: 100, mentions24hAgo: 80 }]]) as ApewisdomSnapshot,
+        claudeRunner: async (p) => { seen = p; return ""; },
+        send: async () => {},
+        fetchStrongDaily: async () => ({
+          spyPerfM: 4,
+          longs: [{ ticker: "UPTR", close: 100, changePct: 1, perfW: 5, perfM: 30, rsM: 26 }],
+          shorts: [],
+        }),
+      },
+    );
+    expect(seen).toContain("Strong Daily");
+    expect(seen).toContain("UPTR");
+  });
+
+  it("appends a Momentum block when fetchMomentum is provided", async () => {
+    let seen = "";
+    await runScan(
+      { label: "T", limit: 5 },
+      {
+        fetchSnapshot: async () =>
+          new Map([["AVGO", { rank: 1, mentions: 100, mentions24hAgo: 80 }]]) as ApewisdomSnapshot,
+        claudeRunner: async (p) => { seen = p; return ""; },
+        send: async () => {},
+        fetchMomentum: async () => ({
+          spyPerfM: 4,
+          longs: [{ ticker: "HOT", close: 100, changePct: 4, perfW: 12, perfM: 35, rsM: 31 }],
+          shorts: [],
+        }),
+      },
+    );
+    expect(seen).toContain("Momentum");
+    expect(seen).toContain("HOT");
+  });
+
+  it("still sends a report if ALL FOUR candidate fetches throw", async () => {
     const send = vi.fn(async () => {});
+    const boom = async (): Promise<never> => {
+      throw new Error("TradingView scan returned 503");
+    };
     await runScan(
       { label: "T", limit: 5 },
       {
@@ -154,12 +197,10 @@ describe("runScan", () => {
         claudeRunner: async () =>
           '```json\n{"summary":"x","verdicts":[{"ticker":"AVGO","verdict":"signal"}]}\n```',
         send,
-        fetchRsLongShort: async () => {
-          throw new Error("TradingView scan returned 503");
-        },
-        fetchReadyToTrend: async () => {
-          throw new Error("TradingView scan returned 503");
-        },
+        fetchRsLongShort: boom,
+        fetchReadyToTrend: boom,
+        fetchStrongDaily: boom,
+        fetchMomentum: boom,
       },
     );
     expect(send).toHaveBeenCalledTimes(1);
