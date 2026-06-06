@@ -106,3 +106,44 @@ describe("checkTelegram", () => {
     expect(r.detail).toMatch(/chat/i);
   });
 });
+
+import { checkFinnhub, checkTradingView, checkReddit } from "./doctor";
+
+describe("checkFinnhub", () => {
+  it("ok when /quote returns a positive current price", async () => {
+    const fetchFn = (async () => jsonResponse({ c: 191.5 })) as unknown as typeof fetch;
+    const r = await checkFinnhub("key", fetchFn);
+    expect(r.status).toBe("ok");
+  });
+  it("warns (not fails) when the quote call errors", async () => {
+    const fetchFn = (async () => jsonResponse({}, false, 401)) as unknown as typeof fetch;
+    const r = await checkFinnhub("badkey", fetchFn);
+    expect(r.status).toBe("warn");
+  });
+});
+
+describe("checkTradingView", () => {
+  it("ok when the scanner returns data", async () => {
+    const fetchFn = (async () => jsonResponse({ data: [{ s: "AMEX:SPY", d: [500] }] })) as unknown as typeof fetch;
+    const r = await checkTradingView(fetchFn);
+    expect(r.status).toBe("ok");
+  });
+  it("warns when the scanner is unreachable", async () => {
+    const fetchFn = (async () => jsonResponse({}, false, 503)) as unknown as typeof fetch;
+    const r = await checkTradingView(fetchFn);
+    expect(r.status).toBe("warn");
+  });
+});
+
+describe("checkReddit", () => {
+  it("ok when an app-only token is granted", async () => {
+    const fetchFn = (async () => jsonResponse({ access_token: "abc", token_type: "bearer" })) as unknown as typeof fetch;
+    const r = await checkReddit("id", "secret", "ua", fetchFn);
+    expect(r.status).toBe("ok");
+  });
+  it("warns when the token request is refused", async () => {
+    const fetchFn = (async () => jsonResponse({ error: "invalid_grant" }, false, 401)) as unknown as typeof fetch;
+    const r = await checkReddit("id", "bad", "ua", fetchFn);
+    expect(r.status).toBe("warn");
+  });
+});

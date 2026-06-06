@@ -1,6 +1,7 @@
 // src/config/doctor.ts — self-host diagnostics ("npm run doctor").
 // Pure, dependency-injected checks + a thin entrypoint. No new runtime deps.
 import { loadEnv } from "./env";
+import { postScan } from "../core/tvScanner";
 
 export type CheckStatus = "ok" | "warn" | "fail";
 export interface CheckResult { name: string; status: CheckStatus; detail: string; }
@@ -90,5 +91,58 @@ export async function checkTelegram(botToken: string, chatId: string, fetchFn: t
     return { name: "Telegram", status: "ok", detail: `bot @${me.result?.username ?? "?"} → chat ${chatId} (${chat.result?.type ?? "?"})` };
   } catch (err) {
     return { name: "Telegram", status: "fail", detail: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+/** Finnhub key works: a /quote probe returns a positive current price. Optional → warn. */
+export async function checkFinnhub(apiKey: string, fetchFn: typeof fetch): Promise<CheckResult> {
+  try {
+    const res = await fetchFn(`https://finnhub.io/api/v1/quote?symbol=AAPL&token=${encodeURIComponent(apiKey)}`);
+    const data = (await res.json().catch(() => ({}))) as { c?: number };
+    if (res.ok && typeof data.c === "number" && data.c > 0) {
+      return { name: "Finnhub", status: "ok", detail: `quote AAPL=${data.c}` };
+    }
+    return { name: "Finnhub", status: "warn", detail: `quote probe failed (HTTP ${res.status}) — earnings/news will be skipped` };
+  } catch (err) {
+    return { name: "Finnhub", status: "warn", detail: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+/** TradingView scanner reachable (no key). Optional → warn (the briefing degrades). */
+export async function checkTradingView(fetchFn: typeof fetch): Promise<CheckResult> {
+  try {
+    const resp = await postScan(fetchFn, {
+      symbols: { tickers: ["AMEX:SPY"], query: { types: [] } },
+      columns: ["close"],
+    });
+    if (resp.data && resp.data.length > 0) {
+      return { name: "TradingView", status: "ok", detail: "scanner reachable" };
+    }
+    return { name: "TradingView", status: "warn", detail: "scanner returned no data" };
+  } catch (err) {
+    return { name: "TradingView", status: "warn", detail: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+/** Reddit app-only OAuth (client_credentials) yields a token. Optional → warn. */
+export async function checkReddit(clientId: string, clientSecret: string, userAgent: string, fetchFn: typeof fetch): Promise<CheckResult> {
+  try {
+    const auth = Buffer.from(`${clientId}:${clientSecret}`).toString("base64");
+    const res = await fetchFn("https://www.reddit.com/api/v1/access_token", {
+      method: "POST",
+      headers: {
+        Authorization: `Basic ${auth}`,
+        "Content-Type": "application/x-www-form-urlencoded",
+        "User-Agent": userAgent,
+      },
+      body: "grant_type=client_credentials",
+    });
+    const data = (await res.json().catch(() => ({}))) as { access_token?: string; error?: string };
+    if (res.ok && data.access_token) {
+      return { name: "Reddit", status: "ok", detail: "app-only token granted" };
+    }
+    return { name: "Reddit", status: "warn", detail: `token request failed: ${data.error ?? res.status}` };
+  } catch (err) {
+    return { name: "Reddit", status: "warn", detail: err instanceof Error ? err.message : String(err) };
   }
 }
