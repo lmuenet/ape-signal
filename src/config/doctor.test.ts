@@ -108,6 +108,7 @@ describe("checkTelegram", () => {
 });
 
 import { checkFinnhub, checkTradingView, checkReddit } from "./doctor";
+import { runDoctor } from "./doctor";
 
 describe("checkFinnhub", () => {
   it("ok when /quote returns a positive current price", async () => {
@@ -145,5 +146,61 @@ describe("checkReddit", () => {
     const fetchFn = (async () => jsonResponse({ error: "invalid_grant" }, false, 401)) as unknown as typeof fetch;
     const r = await checkReddit("id", "bad", "ua", fetchFn);
     expect(r.status).toBe("warn");
+  });
+});
+
+describe("runDoctor", () => {
+  const okFetch = (async (url: RequestInfo | URL) => {
+    const u = String(url);
+    if (u.includes("getMe")) return jsonResponse({ ok: true, result: { username: "b" } });
+    if (u.includes("getChat")) return jsonResponse({ ok: true, result: { type: "private" } });
+    if (u.includes("finnhub")) return jsonResponse({ c: 100 });
+    if (u.includes("scanner.tradingview")) return jsonResponse({ data: [{ s: "AMEX:SPY", d: [1] }] });
+    if (u.includes("reddit")) return jsonResponse({ access_token: "x" });
+    return jsonResponse({}, false, 404);
+  }) as unknown as typeof fetch;
+
+  it("runs env+claude+telegram+tradingview by default; skips finnhub/reddit when unconfigured", async () => {
+    const results = await runDoctor({
+      source: { TELEGRAM_BOT_TOKEN: "t", TELEGRAM_CHAT_ID: "c" },
+      fetchFn: okFetch,
+      claudeRunner: async () => "OK",
+    });
+    const names = results.map((r) => r.name);
+    expect(names).toEqual(["Required env", "Claude CLI", "Telegram", "TradingView"]);
+    expect(results.every((r) => r.status === "ok")).toBe(true);
+  });
+
+  it("includes Finnhub and Reddit checks when those are configured", async () => {
+    const results = await runDoctor({
+      source: {
+        TELEGRAM_BOT_TOKEN: "t", TELEGRAM_CHAT_ID: "c",
+        FINNHUB_API_KEY: "fk", ENABLE_REDDIT_CRAWL: "1",
+        REDDIT_CLIENT_ID: "id", REDDIT_CLIENT_SECRET: "sec",
+      },
+      fetchFn: okFetch,
+      claudeRunner: async () => "OK",
+    });
+    const names = results.map((r) => r.name);
+    expect(names).toContain("Finnhub");
+    expect(names).toContain("Reddit");
+  });
+
+  it("sends a test message when sendTest is set (extra ok result)", async () => {
+    const sent: string[] = [];
+    const fetchFn = (async (url: RequestInfo | URL, init?: RequestInit) => {
+      const u = String(url);
+      if (u.includes("sendMessage")) { sent.push(String(init?.body ?? "")); return jsonResponse({ ok: true }); }
+      if (u.includes("getMe")) return jsonResponse({ ok: true, result: { username: "b" } });
+      if (u.includes("getChat")) return jsonResponse({ ok: true, result: { type: "private" } });
+      if (u.includes("scanner.tradingview")) return jsonResponse({ data: [{ s: "x", d: [1] }] });
+      return jsonResponse({}, false, 404);
+    }) as unknown as typeof fetch;
+    const results = await runDoctor({
+      source: { TELEGRAM_BOT_TOKEN: "t", TELEGRAM_CHAT_ID: "c" },
+      fetchFn, claudeRunner: async () => "OK", sendTest: true,
+    });
+    expect(sent.length).toBe(1);
+    expect(results.some((r) => r.name === "Telegram test message" && r.status === "ok")).toBe(true);
   });
 });

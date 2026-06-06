@@ -1,7 +1,9 @@
 // src/config/doctor.ts — self-host diagnostics ("npm run doctor").
 // Pure, dependency-injected checks + a thin entrypoint. No new runtime deps.
+import { readFileSync, existsSync } from "node:fs";
 import { loadEnv } from "./env";
 import { postScan } from "../core/tvScanner";
+import { spawnClaudeRunner } from "../claude/invoke";
 
 export type CheckStatus = "ok" | "warn" | "fail";
 export interface CheckResult { name: string; status: CheckStatus; detail: string; }
@@ -145,4 +147,90 @@ export async function checkReddit(clientId: string, clientSecret: string, userAg
   } catch (err) {
     return { name: "Reddit", status: "warn", detail: err instanceof Error ? err.message : String(err) };
   }
+}
+
+export interface DoctorDeps {
+  source: Record<string, string | undefined>;
+  fetchFn: typeof fetch;
+  claudeRunner: Runner;
+  sendTest?: boolean;
+}
+
+function isTruthy(v: string | undefined): boolean {
+  const t = (v ?? "").trim().toLowerCase();
+  return t === "1" || t === "true" || t === "on" || t === "yes";
+}
+
+async function sendTestMessage(botToken: string, chatId: string, fetchFn: typeof fetch): Promise<CheckResult> {
+  try {
+    const res = await fetchFn(`${TG_API}/bot${botToken}/sendMessage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chat_id: chatId, text: "✅ ape-signal doctor: Test-Nachricht — Bot→Chat funktioniert." }),
+    });
+    const data = (await res.json().catch(() => ({}))) as { ok?: boolean; description?: string };
+    if (res.ok && data.ok) return { name: "Telegram test message", status: "ok", detail: "sent" };
+    return { name: "Telegram test message", status: "fail", detail: data.description ?? `HTTP ${res.status}` };
+  } catch (err) {
+    return { name: "Telegram test message", status: "fail", detail: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+/** Run every applicable check and return the results, in display order. */
+export async function runDoctor(deps: DoctorDeps): Promise<CheckResult[]> {
+  const { source, fetchFn, claudeRunner } = deps;
+  const results: CheckResult[] = [];
+  results.push(checkRequiredEnv(source));
+  results.push(await checkClaude(claudeRunner));
+
+  const botToken = source.TELEGRAM_BOT_TOKEN;
+  const chatId = source.TELEGRAM_CHAT_ID;
+  if (botToken && chatId) {
+    results.push(await checkTelegram(botToken, chatId, fetchFn));
+    if (deps.sendTest) results.push(await sendTestMessage(botToken, chatId, fetchFn));
+  }
+
+  if (source.FINNHUB_API_KEY) results.push(await checkFinnhub(source.FINNHUB_API_KEY, fetchFn));
+  results.push(await checkTradingView(fetchFn));
+  if (isTruthy(source.ENABLE_REDDIT_CRAWL) && source.REDDIT_CLIENT_ID && source.REDDIT_CLIENT_SECRET) {
+    results.push(await checkReddit(source.REDDIT_CLIENT_ID, source.REDDIT_CLIENT_SECRET, source.REDDIT_USER_AGENT ?? "ape-signal/doctor", fetchFn));
+  }
+  return results;
+}
+
+/** Resolve and read an env file into a record. Order: explicit path, /etc, ./.env. */
+function loadEnvFile(explicit: string | undefined): Record<string, string> {
+  const candidates = explicit ? [explicit] : ["/etc/ape-signal.env", "./.env"];
+  for (const path of candidates) {
+    if (existsSync(path)) {
+      return parseEnvFile(readFileSync(path, "utf8"));
+    }
+  }
+  return {};
+}
+
+async function main(): Promise<void> {
+  const args = process.argv.slice(2);
+  const envFileArg = args.find((a) => a.startsWith("--env-file="))?.slice("--env-file=".length);
+  const sendTest = args.includes("--send-test");
+
+  // File values fill only gaps — ambient/systemd env wins so we never clobber it.
+  const fileEnv = loadEnvFile(envFileArg);
+  for (const [k, v] of Object.entries(fileEnv)) {
+    if (process.env[k] === undefined) process.env[k] = v;
+  }
+
+  const results = await runDoctor({
+    source: process.env,
+    fetchFn: fetch,
+    claudeRunner: (prompt) => withTimeout(spawnClaudeRunner(prompt), 60_000, "claude -p"),
+    sendTest,
+  });
+  console.log(formatResults(results));
+  process.exitCode = hasFailure(results) ? 1 : 0;
+}
+
+// Run only when invoked directly (not when imported by tests).
+if (process.argv[1] && process.argv[1].endsWith("doctor.ts")) {
+  void main();
 }
