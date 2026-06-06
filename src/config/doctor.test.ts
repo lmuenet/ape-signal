@@ -203,4 +203,33 @@ describe("runDoctor", () => {
     expect(sent.length).toBe(1);
     expect(results.some((r) => r.name === "Telegram test message" && r.status === "ok")).toBe(true);
   });
+
+  it("warns (does not fail) when the opt-in test message can't be sent", async () => {
+    const fetchFn = (async (url: RequestInfo | URL) => {
+      const u = String(url);
+      if (u.includes("sendMessage")) return jsonResponse({ ok: false, description: "blocked" }, false, 403);
+      if (u.includes("getMe")) return jsonResponse({ ok: true, result: { username: "b" } });
+      if (u.includes("getChat")) return jsonResponse({ ok: true, result: { type: "private" } });
+      if (u.includes("scanner.tradingview")) return jsonResponse({ data: [{ s: "x", d: [1] }] });
+      return jsonResponse({}, false, 404);
+    }) as unknown as typeof fetch;
+    const results = await runDoctor({
+      source: { TELEGRAM_BOT_TOKEN: "t", TELEGRAM_CHAT_ID: "c" },
+      fetchFn, claudeRunner: async () => "OK", sendTest: true,
+    });
+    const testMsg = results.find((r) => r.name === "Telegram test message");
+    expect(testMsg?.status).toBe("warn");
+    expect(hasFailure(results)).toBe(false); // an opt-in glitch must not flip the exit code
+  });
+
+  it("skips the Telegram check when its env vars are absent", async () => {
+    const results = await runDoctor({
+      source: {}, // no Telegram vars
+      fetchFn: okFetch,
+      claudeRunner: async () => "OK",
+    });
+    const names = results.map((r) => r.name);
+    expect(names).not.toContain("Telegram");
+    expect(names).toContain("Required env"); // which itself fails, reported separately
+  });
 });

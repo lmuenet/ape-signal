@@ -1,7 +1,7 @@
 // src/config/doctor.ts — self-host diagnostics ("npm run doctor").
 // Pure, dependency-injected checks + a thin entrypoint. No new runtime deps.
 import { readFileSync, existsSync } from "node:fs";
-import { loadEnv } from "./env";
+import { loadEnv, truthy } from "./env";
 import { postScan } from "../core/tvScanner";
 import { spawnClaudeRunner } from "../claude/invoke";
 
@@ -156,11 +156,6 @@ export interface DoctorDeps {
   sendTest?: boolean;
 }
 
-function isTruthy(v: string | undefined): boolean {
-  const t = (v ?? "").trim().toLowerCase();
-  return t === "1" || t === "true" || t === "on" || t === "yes";
-}
-
 async function sendTestMessage(botToken: string, chatId: string, fetchFn: typeof fetch): Promise<CheckResult> {
   try {
     const res = await fetchFn(`${TG_API}/bot${botToken}/sendMessage`, {
@@ -170,9 +165,10 @@ async function sendTestMessage(botToken: string, chatId: string, fetchFn: typeof
     });
     const data = (await res.json().catch(() => ({}))) as { ok?: boolean; description?: string };
     if (res.ok && data.ok) return { name: "Telegram test message", status: "ok", detail: "sent" };
-    return { name: "Telegram test message", status: "fail", detail: data.description ?? `HTTP ${res.status}` };
+    // Opt-in extra — a glitch here should warn, not fail the whole doctor's exit code.
+    return { name: "Telegram test message", status: "warn", detail: data.description ?? `HTTP ${res.status}` };
   } catch (err) {
-    return { name: "Telegram test message", status: "fail", detail: err instanceof Error ? err.message : String(err) };
+    return { name: "Telegram test message", status: "warn", detail: err instanceof Error ? err.message : String(err) };
   }
 }
 
@@ -192,7 +188,7 @@ export async function runDoctor(deps: DoctorDeps): Promise<CheckResult[]> {
 
   if (source.FINNHUB_API_KEY) results.push(await checkFinnhub(source.FINNHUB_API_KEY, fetchFn));
   results.push(await checkTradingView(fetchFn));
-  if (isTruthy(source.ENABLE_REDDIT_CRAWL) && source.REDDIT_CLIENT_ID && source.REDDIT_CLIENT_SECRET) {
+  if (truthy(source.ENABLE_REDDIT_CRAWL) && source.REDDIT_CLIENT_ID && source.REDDIT_CLIENT_SECRET) {
     results.push(await checkReddit(source.REDDIT_CLIENT_ID, source.REDDIT_CLIENT_SECRET, source.REDDIT_USER_AGENT ?? "ape-signal/doctor", fetchFn));
   }
   return results;
