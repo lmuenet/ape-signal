@@ -1,0 +1,102 @@
+// src/paper/format.ts — plain-text rendering of the depot for prompts,
+// Telegram messages and the journal. Pure string builders.
+import { equity, liquidationPrice, positionPnl } from "./engine";
+import type { EntryOrder, Portfolio, Position, QuoteMap, TickEvent } from "./types";
+
+const usd = (n: number) => `${n >= 0 ? "" : "-"}$${Math.abs(n).toFixed(2)}`;
+const sign = (n: number) => `${n >= 0 ? "+" : ""}${n.toFixed(2)}`;
+
+function positionLine(pos: Position, quotes: QuoteMap): string {
+  const q = quotes[pos.ticker];
+  const pnl = q ? positionPnl(pos, q.close) : null;
+  const pnlText = pnl === null ? "Kurs fehlt" : `P&L ${usd(pnl)} (${sign((pnl / pos.stake) * 100)}%)`;
+  const tp = pos.takeProfit !== undefined ? `, TP ${pos.takeProfit}` : "";
+  return (
+    `[${pos.id}] ${pos.ticker} ${pos.side} ${pos.leverage}x, Einsatz ${usd(pos.stake)}, ` +
+    `Entry ${pos.entryPrice}${q ? `, Kurs ${q.close}` : ""}, SL ${pos.stopLoss}${tp}, ` +
+    `Liq ${liquidationPrice(pos).toFixed(2)} — ${pnlText}`
+  );
+}
+
+function orderLine(o: EntryOrder): string {
+  const entry = o.entryType === "market" ? "Market" : `Limit ${o.limitPrice}`;
+  const tp = o.takeProfit !== undefined ? `, TP ${o.takeProfit}` : "";
+  return `[${o.id}] ${o.ticker} ${o.side} ${o.leverage}x, Einsatz ${usd(o.stake)}, ${entry}, SL ${o.stopLoss}${tp} (gültig bis Handelsschluss ${o.day})`;
+}
+
+/** Compact depot block — used in prompts and the /journal status message. */
+export function renderPortfolio(p: Portfolio, quotes: QuoteMap): string {
+  const lines = [
+    `Guthaben (frei): ${usd(p.balance)}`,
+    `Equity (gesamt): ${usd(equity(p, quotes))}`,
+  ];
+  lines.push("", p.positions.length > 0 ? "Offene Positionen:" : "Offene Positionen: keine");
+  for (const pos of p.positions) lines.push("  " + positionLine(pos, quotes));
+  lines.push("", p.orders.length > 0 ? "Offene Orders:" : "Offene Orders: keine");
+  for (const o of p.orders) lines.push("  " + orderLine(o));
+  return lines.join("\n");
+}
+
+/** Current quotes block for prompts. */
+export function renderQuotes(quotes: QuoteMap): string {
+  const entries = Object.entries(quotes);
+  if (entries.length === 0) return "Keine Kurse verfügbar.";
+  return entries
+    .map(
+      ([t, q]) =>
+        `${t}: ${q.close} (heute ${sign(q.changePct)}%, Tageshoch ${q.high}, Tagestief ${q.low})`,
+    )
+    .join("\n");
+}
+
+/** One Telegram line per tick event (also reused as the journal record). */
+export function formatEvent(e: TickEvent): string {
+  if (e.kind === "entry-filled") {
+    const p = e.position;
+    const tp = p.takeProfit !== undefined ? `, TP ${p.takeProfit}` : "";
+    return `🟢 Eröffnet: ${p.ticker} ${p.side} ${p.leverage}x @ ${p.entryPrice} — Einsatz ${usd(p.stake)}, SL ${p.stopLoss}${tp}`;
+  }
+  if (e.kind === "order-expired") {
+    return `⏳ Order verfallen: ${e.order.ticker} ${e.order.side} (${e.order.entryType === "limit" ? `Limit ${e.order.limitPrice}` : "Market"}) — Einsatz ${usd(e.order.stake)} zurück`;
+  }
+  const t = e.trade;
+  const emoji = t.pnl >= 0 ? "✅" : t.reason === "liquidation" ? "💀" : "🔴";
+  const reasonText: Record<typeof t.reason, string> = {
+    stop: "Stop-Loss",
+    "take-profit": "Take-Profit",
+    liquidation: "LIQUIDIERT",
+    manual: "Geschlossen",
+  };
+  return `${emoji} ${reasonText[t.reason]}: ${t.ticker} ${t.side} @ ${t.exitPrice} — P&L ${usd(t.pnl)} (${sign((t.pnl / t.stake) * 100)}%)`;
+}
+
+/** The Kandidatenkür Telegram post. */
+export function formatKuer(accepted: EntryOrder[], rejectedReasons: string[], journal: string): string {
+  const lines = [`🦍 Mr Ape — Kandidatenkür (${new Date().toISOString().slice(0, 10)})`, ""];
+  if (accepted.length === 0) {
+    lines.push("Heute keine neuen Trades — kein Setup hat überzeugt.");
+  } else {
+    for (const o of accepted) lines.push("• " + orderLine(o), o.thesis ? `  ↳ ${o.thesis}` : "");
+  }
+  if (rejectedReasons.length > 0) {
+    lines.push("", "Vom Risiko-Check abgelehnt:", ...rejectedReasons.map((r) => `  ✗ ${r}`));
+  }
+  if (journal.trim() !== "") lines.push("", journal.trim());
+  lines.push("", "Paper-Trading — kein echtes Geld, keine Anlageberatung.");
+  return lines.filter((l) => l !== undefined).join("\n");
+}
+
+/** The after-close Telegram daily summary. */
+export function formatDailySummary(p: Portfolio, quotes: QuoteMap, day: string): string {
+  const todayTrades = p.history.filter((t) => t.closedAt.startsWith(day));
+  const dayPnl = todayTrades.reduce((s, t) => s + t.pnl, 0);
+  const lines = [
+    `🦍 Mr Ape — Tagesabschluss ${day}`,
+    "",
+    `Equity: ${usd(equity(p, quotes))} · Guthaben frei: ${usd(p.balance)}`,
+    `Heute realisiert: ${usd(dayPnl)} (${todayTrades.length} Trade${todayTrades.length === 1 ? "" : "s"})`,
+    "",
+    renderPortfolio(p, quotes).split("\n").slice(2).join("\n"),
+  ];
+  return lines.join("\n");
+}

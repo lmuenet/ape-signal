@@ -14,6 +14,11 @@ twice-daily, Telegram-delivered trading briefing — all under your own Claude
   (incl. r/wallstreetbetsGER, r/shortsqueeze).
 - **On-demand strategy** — reply `/strategie TICKER [profile]` on Telegram for a
   deep single-stock analysis.
+- **Paper trading "Mr Ape"** (opt-in, `ENABLE_PAPER_TRADING=1`) — a simulated
+  CFD-style depot. After the PreUS scan the LLM picks up to 3 trade candidates;
+  half-hourly ticks during the US session check fills against TradingView
+  quotes; a daily close summary and an append-only trading journal go to
+  Telegram (`/journal` to read or talk to it). No real orders, ever.
 
 `ape-intel` is embedded as a git submodule at `vendor/ape-intel` (shared data
 fetchers); `claude -p` runs the reasoning locally under your subscription.
@@ -57,6 +62,7 @@ The scans run as systemd timers; the listener is a long-running service. See
 | Path | Purpose |
 |---|---|
 | `src/scan/` | Scan pipeline (data → challenge → report) |
+| `src/paper/` | Paper trading: depot engine, fill simulation, ticks, journal |
 | `src/reddit/` | Reddit OAuth client + ticker extraction |
 | `src/telegram/` | Telegram client + long-poll listener |
 | `src/claude/` | `claude -p` invoker (stdout capture + JSON parse) |

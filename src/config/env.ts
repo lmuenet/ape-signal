@@ -4,6 +4,7 @@ export interface Env {
   telegramChatId: string;
   finnhubApiKey?: string;
   redditCrawlEnabled: boolean;
+  paperTradingEnabled: boolean;
   redditClientId?: string;
   redditClientSecret?: string;
   redditUserAgent?: string;
@@ -37,6 +38,7 @@ export function loadEnv(source: Record<string, string | undefined> = process.env
     telegramChatId: source.TELEGRAM_CHAT_ID!,
     finnhubApiKey: val(source, "FINNHUB_API_KEY"),
     redditCrawlEnabled: truthy(source.ENABLE_REDDIT_CRAWL),
+    paperTradingEnabled: truthy(source.ENABLE_PAPER_TRADING),
     redditClientId: val(source, "REDDIT_CLIENT_ID"),
     redditClientSecret: val(source, "REDDIT_CLIENT_SECRET"),
     redditUserAgent: val(source, "REDDIT_USER_AGENT"),

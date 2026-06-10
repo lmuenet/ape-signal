@@ -8,6 +8,17 @@ import { fetchRsLongShort, fetchReadyToTrend, fetchStrongDaily, fetchMomentum } 
 import { createRedditApiRunner } from "../reddit/redditApi";
 import { crawlReddit, type RedditCandidate } from "../reddit/crawl";
 import { fetchEarningsToday } from "./earnings";
+import { createClaudeRunner } from "../claude/invoke";
+import { runKuer } from "../paper/select";
+import { fetchTickQuotes } from "../paper/quotes";
+import {
+  appendJournal,
+  berlinDay,
+  dataDir,
+  loadPortfolio,
+  readJournalTail,
+  savePortfolio,
+} from "../paper/store";
 
 const LABEL = process.argv[2] ?? "Scan";
 const LIMIT = Number(process.env.SCAN_LIMIT ?? "15");
@@ -59,8 +70,36 @@ async function main(): Promise<void> {
       });
   }
 
-  await runScan({ label: LABEL, limit: LIMIT }, deps);
+  const challenge = await runScan({ label: LABEL, limit: LIMIT }, deps);
   console.log(`[scan] ${LABEL} report sent.`);
+
+  // Kandidatenkür: opt-in (ENABLE_PAPER_TRADING), only after the PreUS scan —
+  // fresh data, US open is 15 minutes away. Sonnet researches, Opus decides.
+  if (env.paperTradingEnabled && LABEL === "PreUS") {
+    const dir = dataDir();
+    const startBalance = Number(process.env.PAPER_START_BALANCE ?? "1000");
+    const scanSummary = [
+      challenge.summary,
+      ...challenge.verdicts.map((v) => `${v.ticker}: ${v.verdict}${v.thesis ? ` — ${v.thesis}` : ""}`),
+    ]
+      .filter((l) => l && l.trim() !== "")
+      .join("\n");
+    await runKuer(
+      { scanSummary },
+      {
+        loadPortfolio: () => loadPortfolio(dir, startBalance),
+        savePortfolio: (p) => savePortfolio(dir, p),
+        appendJournal: (title, body) => appendJournal(dir, title, body),
+        readJournalTail: () => readJournalTail(dir),
+        fetchQuotes: (tickers) => fetchTickQuotes(tickers, fetch),
+        researchRunner: createClaudeRunner({ model: "sonnet", allowedTools: ["WebSearch", "Skill"] }),
+        decideRunner: createClaudeRunner({ model: "opus" }),
+        send: (text) => telegram.sendMessage(text),
+        berlinDay,
+      },
+    );
+    console.log("[scan] Kandidatenkür done.");
+  }
 }
 
 main().catch(async (err) => {

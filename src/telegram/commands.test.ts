@@ -21,6 +21,15 @@ describe("parseCommand", () => {
     expect(parseCommand("/scan")).toEqual({ kind: "scan" });
   });
 
+  it("parses /journal with and without free text", () => {
+    expect(parseCommand("/journal")).toEqual({ kind: "journal" });
+    expect(parseCommand("/journal@ape_bot")).toEqual({ kind: "journal" });
+    expect(parseCommand("/journal dein Guthaben ist jetzt 500")).toEqual({
+      kind: "journal",
+      text: "dein Guthaben ist jetzt 500",
+    });
+  });
+
   it("treats /strategie with no ticker as unknown", () => {
     expect(parseCommand("/strategie")).toEqual({ kind: "unknown", text: "/strategie" });
   });

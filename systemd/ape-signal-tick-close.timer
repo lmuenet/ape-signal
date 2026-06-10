@@ -1,0 +1,10 @@
+[Unit]
+Description=Ape Signal paper-trading closing tick (22:00 Europe/Berlin)
+
+[Timer]
+OnCalendar=Mon..Fri *-*-* 22:00:00 Europe/Berlin
+Persistent=true
+Unit=ape-signal-tick@Close.service
+
+[Install]
+WantedBy=timers.target
