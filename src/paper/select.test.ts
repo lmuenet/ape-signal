@@ -18,6 +18,10 @@ const DECISION = JSON.stringify({
   journal: "Heute ein Trade: NVDA long.",
 });
 
+const DEBATE = JSON.stringify({
+  debates: [{ ticker: "NVDA", bull: "Starkes Momentum nach Earnings-Beat", bear: "Bewertung überkauft, Gap-Risiko nach oben gelaufen" }],
+});
+
 function makeDeps(p: Portfolio, quotes: QuoteMap, over: Partial<KuerDeps> = {}) {
   const saved: Portfolio[] = [];
   const journal: Array<[string, string]> = [];
@@ -29,6 +33,7 @@ function makeDeps(p: Portfolio, quotes: QuoteMap, over: Partial<KuerDeps> = {}) 
     readJournalTail: () => "",
     fetchQuotes: vi.fn(async () => quotes),
     researchRunner: vi.fn(async () => DOSSIER),
+    debateRunner: vi.fn(async () => DEBATE),
     decideRunner: vi.fn(async () => DECISION),
     send: vi.fn(async (t: string) => {
       sent.push(t);
@@ -64,6 +69,36 @@ describe("runKuer", () => {
     expect(saved.at(-1)?.orders).toHaveLength(1); // Opus still decided
     const prompt = (deps.decideRunner as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
     expect(prompt).toContain("Research fehlgeschlagen");
+  });
+
+  it("feeds the bull/bear debate into the decision prompt", async () => {
+    const { deps } = makeDeps(freshPortfolio(1000), quotes);
+    await runKuer({ scanSummary: "NVDA: signal" }, deps);
+    const prompt = (deps.decideRunner as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
+    expect(prompt).toContain("Bull/Bear");
+    expect(prompt).toContain("Gap-Risiko");
+  });
+
+  it("degrades to a debate-free decision when the debate fails", async () => {
+    const { deps, saved } = makeDeps(freshPortfolio(1000), quotes, {
+      debateRunner: vi.fn(async () => {
+        throw new Error("sonnet down");
+      }),
+    });
+    await runKuer({ scanSummary: "NVDA: signal" }, deps);
+    expect(saved.at(-1)?.orders).toHaveLength(1); // Opus still decided
+    const prompt = (deps.decideRunner as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
+    expect(prompt).toContain("keine Debatte");
+  });
+
+  it("skips the debate when research already failed (nothing to debate)", async () => {
+    const { deps } = makeDeps(freshPortfolio(1000), quotes, {
+      researchRunner: vi.fn(async () => {
+        throw new Error("websearch down");
+      }),
+    });
+    await runKuer({ scanSummary: "NVDA: signal" }, deps);
+    expect(deps.debateRunner).not.toHaveBeenCalled();
   });
 
   it("skips the day on an unreadable decision instead of guessing", async () => {

@@ -64,7 +64,7 @@ async function main(): Promise<void> {
 
   const paperDir = dataDir();
   const journalDeps: JournalDeps = {
-    loadPortfolio: () => loadPortfolio(paperDir, Number(process.env.PAPER_START_BALANCE ?? "1000")),
+    loadPortfolio: () => loadPortfolio(paperDir, Number(process.env.PAPER_START_BALANCE ?? "2000")),
     savePortfolio: (p) => savePortfolio(paperDir, p),
     appendJournal: (title, body) => appendJournal(paperDir, title, body),
     readJournalTail: () => readJournalTail(paperDir),

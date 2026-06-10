@@ -2,6 +2,7 @@
 // Pure functions only: portfolio in, portfolio out. The conservative fill rule
 // is documented in docs/adr/0001-tradingview-scanner-fill-simulation.md.
 import {
+  COSTS,
   GUARDRAILS,
   type Adjustment,
   type ClosedTrade,
@@ -63,21 +64,44 @@ export function liquidationPrice(pos: Position): number {
   return pos.side === "long" ? pos.entryPrice - move : pos.entryPrice + move;
 }
 
-function closeTrade(pos: Position, exitPrice: number, reason: ClosedTrade["reason"], now: string): ClosedTrade {
+/** Flat execution fee: free at/above the threshold, small-order fee below. */
+export function executionFee(notional: number): number {
+  return notional >= COSTS.freeFrom ? 0 : COSTS.orderFee;
+}
+
+/**
+ * Close a position at `level`. Market-type exits (stop, liquidation, manual)
+ * slip half a spread against the trade; a take-profit is a limit and fills
+ * exactly at its level. The exit fee is returned separately because the entry
+ * fee was already deducted from the balance at fill time.
+ */
+function closeTrade(
+  pos: Position,
+  level: number,
+  reason: ClosedTrade["reason"],
+  now: string,
+): { trade: ClosedTrade; exitFee: number } {
+  const slip = reason === "take-profit" ? 0 : COSTS.halfSpread;
+  const exitPrice = pos.side === "long" ? level * (1 - slip) : level * (1 + slip);
   const raw =
     pos.side === "long" ? pos.units * (exitPrice - pos.entryPrice) : pos.units * (pos.entryPrice - exitPrice);
+  const exitFee = executionFee(pos.units * exitPrice);
   return {
-    id: pos.id,
-    ticker: pos.ticker,
-    side: pos.side,
-    stake: pos.stake,
-    leverage: pos.leverage,
-    entryPrice: pos.entryPrice,
-    exitPrice,
-    pnl: Math.max(raw, -pos.stake),
-    reason,
-    openedAt: pos.openedAt,
-    closedAt: now,
+    trade: {
+      id: pos.id,
+      ticker: pos.ticker,
+      side: pos.side,
+      stake: pos.stake,
+      leverage: pos.leverage,
+      entryPrice: pos.entryPrice,
+      exitPrice,
+      pnl: Math.max(raw, -pos.stake),
+      fees: (pos.fees ?? 0) + exitFee,
+      reason,
+      openedAt: pos.openedAt,
+      closedAt: now,
+    },
+    exitFee,
   };
 }
 
@@ -116,13 +140,16 @@ export function applyTick(p: Portfolio, quotes: QuoteMap, opts: TickOptions): Ti
     const q = quotes[order.ticker];
     if (q) {
       const prev = prevQuotes[order.ticker];
+      // A market entry crosses half a spread; a limit entry guarantees its level.
       const fillPrice =
         order.entryType === "market"
-          ? q.close
+          ? q.close * (order.side === "long" ? 1 + COSTS.halfSpread : 1 - COSTS.halfSpread)
           : touched(order.limitPrice!, q, prev, firstTick)
             ? order.limitPrice!
             : null;
       if (fillPrice !== null && fillPrice > 0) {
+        const entryFee = executionFee(order.stake * order.leverage);
+        balance -= entryFee;
         const position: Position = {
           id: order.id,
           ticker: order.ticker,
@@ -135,6 +162,7 @@ export function applyTick(p: Portfolio, quotes: QuoteMap, opts: TickOptions): Ti
           takeProfit: order.takeProfit,
           openedAt: opts.now,
           thesis: order.thesis,
+          fees: entryFee,
         };
         positions.push(position);
         openedThisTick.add(position.id);
@@ -174,20 +202,20 @@ export function applyTick(p: Portfolio, quotes: QuoteMap, opts: TickOptions): Ti
 
     // Falling (long) the price hits the HIGHER of stop/liquidation first —
     // whichever touched level is closer to the entry wins; ties go to the stop.
-    let trade: ClosedTrade | null = null;
+    let closed: { trade: ClosedTrade; exitFee: number } | null = null;
     if (stopTouched || liqTouched) {
       const useStop = stopTouched && (!liqTouched || !isWorse(pos.stopLoss, liqPrice, pos.side));
-      trade = useStop
+      closed = useStop
         ? closeTrade(pos, pos.stopLoss, "stop", opts.now)
         : closeTrade(pos, liqPrice, "liquidation", opts.now);
     } else if (tpTouched) {
-      trade = closeTrade(pos, pos.takeProfit!, "take-profit", opts.now);
+      closed = closeTrade(pos, pos.takeProfit!, "take-profit", opts.now);
     }
 
-    if (trade) {
-      balance += Math.max(0, trade.stake + trade.pnl);
-      history.push(trade);
-      events.push({ kind: "position-closed", trade });
+    if (closed) {
+      balance += Math.max(0, closed.trade.stake + closed.trade.pnl) - closed.exitFee;
+      history.push(closed.trade);
+      events.push({ kind: "position-closed", trade: closed.trade });
     } else {
       remaining.push(pos);
     }
@@ -372,10 +400,10 @@ export function applyAdjustments(
         reject("kein aktueller Kurs — Position bleibt offen");
         continue;
       }
-      const trade = closeTrade(pos, q.close, "manual", now);
+      const { trade, exitFee } = closeTrade(pos, q.close, "manual", now);
       portfolio = {
         ...portfolio,
-        balance: portfolio.balance + Math.max(0, trade.stake + trade.pnl),
+        balance: portfolio.balance + Math.max(0, trade.stake + trade.pnl) - exitFee,
         positions: portfolio.positions.filter((x) => x.id !== pos.id),
         history: [...portfolio.history, trade],
       };

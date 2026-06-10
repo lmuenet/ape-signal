@@ -58,9 +58,50 @@ export function buildDossierPrompt(input: DossierPromptInput): string {
   ].join("\n");
 }
 
+export interface DebatePromptInput {
+  day: string;
+  dossierBlock: string;
+  quotesBlock: string;
+  journalTail: string;
+}
+
+/**
+ * Stage 1b (Sonnet, no tools): adversarial bull/bear debate over the dossier
+ * candidates — the TradingAgents pattern. Argues both sides, recommends nothing.
+ */
+export function buildDebatePrompt(input: DebatePromptInput): string {
+  return [
+    PERSONA,
+    "",
+    `Heute ist ${input.day}. Du bist in der ADVOCATUS-DIABOLI-Rolle: prüfe die Kandidaten`,
+    "aus dem Research-Dossier adversarial. Formuliere für JEDEN Kandidaten den stärksten",
+    "Bull-Case UND den stärksten Bear-Case (je 1-2 Sätze, konkret: Katalysator, Risiko,",
+    "Kurslevel). Empfiehl nichts und entscheide nichts — die Entscheidung fällt später.",
+    "",
+    "## Research-Dossier",
+    input.dossierBlock,
+    "",
+    "## Aktuelle Kurse (TradingView)",
+    input.quotesBlock,
+    "",
+    "## Dein Journal (letzte Einträge)",
+    input.journalTail.trim() === "" ? "(noch leer)" : input.journalTail,
+    "",
+    "Antworte mit GENAU diesem JSON-Format:",
+    "{",
+    '  "debates": [',
+    '    { "ticker": "XYZ", "bull": "stärkstes Argument FÜR den Trade", "bear": "stärkstes Argument DAGEGEN" }',
+    "  ]",
+    "}",
+    "",
+    JSON_ONLY,
+  ].join("\n");
+}
+
 export interface DecisionPromptInput {
   day: string;
   dossierBlock: string; // rendered dossier (or raw JSON)
+  debateBlock: string; // rendered bull/bear debate ("(keine Debatte ...)" if missing)
   quotesBlock: string;
   portfolioBlock: string;
   journalTail: string;
@@ -83,6 +124,11 @@ export function buildDecisionPrompt(input: DecisionPromptInput): string {
     "",
     "## Research-Dossier (von deinem Researcher)",
     input.dossierBlock,
+    "",
+    "## Bull/Bear-Debatte (dein Advocatus Diaboli)",
+    "Wäge für jeden Kandidaten beide Seiten ab, bevor du entscheidest — ein starker",
+    "Bear-Case ist ein Grund für einen engeren Stop, kleineren Einsatz oder Verzicht.",
+    input.debateBlock,
     "",
     "## Dein Journal (letzte Einträge)",
     input.journalTail.trim() === "" ? "(noch leer)" : input.journalTail,

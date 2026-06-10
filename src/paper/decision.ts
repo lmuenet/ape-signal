@@ -59,6 +59,25 @@ export function parseDossier(raw: string): Dossier | null {
   return { candidates, marketContext: str(json.marketContext) };
 }
 
+/** Bull/Bear cases per candidate (Advocatus Diaboli, TradingAgents pattern). */
+export interface Debate {
+  debates: Array<{ ticker: string; bull: string; bear: string }>;
+}
+
+export function parseDebate(raw: string): Debate | null {
+  const json = extractJson(raw) as { debates?: unknown } | null;
+  if (!json || !Array.isArray(json.debates)) return null;
+  const debates = json.debates
+    .map((d: unknown): Debate["debates"][number] | null => {
+      const o = (d ?? {}) as Record<string, unknown>;
+      const ticker = str(o.ticker).toUpperCase().trim();
+      if (ticker === "" || !/^[A-Z.]{1,6}$/.test(ticker)) return null;
+      return { ticker, bull: str(o.bull), bear: str(o.bear) };
+    })
+    .filter((d): d is Debate["debates"][number] => d !== null);
+  return { debates };
+}
+
 export interface Decision {
   trades: TradeDecision[];
   journal: string;
