@@ -4,12 +4,13 @@ import {
   applyAdjustments,
   applyTick,
   equity,
+  executionFee,
   liquidationPrice,
   placeOrders,
   positionPnl,
   tradesPlacedToday,
 } from "./engine";
-import { freshPortfolio, type EntryOrder, type Portfolio, type Position, type QuoteMap } from "./types";
+import { COSTS, freshPortfolio, type EntryOrder, type Portfolio, type Position, type QuoteMap } from "./types";
 
 const NOW = "2026-06-09T15:30:00.000Z";
 const DAY = "2026-06-09";
@@ -86,15 +87,16 @@ describe("equity", () => {
 });
 
 describe("applyTick — entry orders", () => {
-  it("fills a market order at the tick close", () => {
+  it("fills a market order half a spread above the tick close", () => {
     const p: Portfolio = { ...freshPortfolio(800), orders: [order({ entryType: "market", limitPrice: undefined })] };
     const { portfolio, events } = applyTick(p, { NVDA: q(101, 102, 100) }, { now: NOW, day: DAY, isClose: false });
     expect(events).toHaveLength(1);
     expect(events[0].kind).toBe("entry-filled");
-    expect(portfolio.positions[0].entryPrice).toBe(101);
-    expect(portfolio.positions[0].units).toBeCloseTo(600 / 101);
+    const effEntry = 101 * (1 + COSTS.halfSpread);
+    expect(portfolio.positions[0].entryPrice).toBeCloseTo(effEntry);
+    expect(portfolio.positions[0].units).toBeCloseTo(600 / effEntry);
     expect(portfolio.orders).toHaveLength(0);
-    expect(portfolio.balance).toBe(800); // stake was already reserved
+    expect(portfolio.balance).toBe(800); // stake reserved; notional 600 ≥ 500 → no fee
   });
 
   it("fills a limit order on first-tick day-low evidence at the limit price", () => {
@@ -131,16 +133,17 @@ describe("applyTick — entry orders", () => {
 });
 
 describe("applyTick — exits", () => {
-  it("triggers a long stop on new-low evidence at the stop price", () => {
+  it("triggers a long stop half a spread below the stop level", () => {
     const prev = { NVDA: q(101, 102, 96) };
     const p = withLastTick({ ...freshPortfolio(800), positions: [position()] }, prev);
     const { portfolio, events } = applyTick(p, { NVDA: q(96, 102, 94.5) }, { now: NOW, day: DAY, isClose: false });
     expect(events[0].kind).toBe("position-closed");
     const trade = events[0].kind === "position-closed" ? events[0].trade : null;
     expect(trade?.reason).toBe("stop");
-    expect(trade?.exitPrice).toBe(95);
-    expect(trade?.pnl).toBeCloseTo(-30); // 6 units × -5
-    expect(portfolio.balance).toBeCloseTo(800 + 200 - 30);
+    const effExit = 95 * (1 - COSTS.halfSpread);
+    expect(trade?.exitPrice).toBeCloseTo(effExit);
+    expect(trade?.pnl).toBeCloseTo(6 * (effExit - 100)); // -30.57
+    expect(portfolio.balance).toBeCloseTo(800 + 200 + 6 * (effExit - 100)); // exit notional ≥ 500 → no fee
     expect(portfolio.positions).toHaveLength(0);
   });
 
@@ -153,7 +156,7 @@ describe("applyTick — exits", () => {
     expect(trade?.reason).toBe("stop");
   });
 
-  it("hits the take-profit on new-high evidence", () => {
+  it("hits the take-profit exactly at the level (limit semantics, no spread)", () => {
     const prev = { NVDA: q(101, 102, 99) };
     const p = withLastTick({ ...freshPortfolio(800), positions: [position()] }, prev);
     const { events } = applyTick(p, { NVDA: q(118, 121, 99) }, { now: NOW, day: DAY, isClose: false });
@@ -172,8 +175,9 @@ describe("applyTick — exits", () => {
     const { portfolio, events } = applyTick(p, { NVDA: q(60, 100, 55) }, { now: NOW, day: DAY, isClose: false });
     const trade = events[0].kind === "position-closed" ? events[0].trade : null;
     expect(trade?.reason).toBe("liquidation");
-    expect(trade?.pnl).toBeCloseTo(-200);
-    expect(portfolio.balance).toBeCloseTo(800); // stake fully gone
+    expect(trade?.pnl).toBeCloseTo(-200); // capped at the stake despite the spread
+    // Stake fully gone; the exit notional (~400) is below 500 → small-order fee.
+    expect(portfolio.balance).toBeCloseTo(800 - COSTS.orderFee);
   });
 
   it("does not exit a position opened in the same tick", () => {
@@ -273,13 +277,14 @@ describe("applyAdjustments", () => {
     expect(bad.rejected).toHaveLength(1);
   });
 
-  it("closes a position at the current quote", () => {
+  it("closes a position half a spread below the current quote", () => {
     const p: Portfolio = { ...freshPortfolio(800), positions: [position()] };
     const { portfolio, events } = applyAdjustments(p, [{ type: "close_position", positionId: position().id }], quotes, NOW);
     const trade = events[0].kind === "position-closed" ? events[0].trade : null;
     expect(trade?.reason).toBe("manual");
-    expect(trade?.pnl).toBeCloseTo(60);
-    expect(portfolio.balance).toBeCloseTo(800 + 260);
+    const effExit = 110 * (1 - COSTS.halfSpread);
+    expect(trade?.pnl).toBeCloseTo(6 * (effExit - 100)); // 59.34
+    expect(portfolio.balance).toBeCloseTo(800 + 200 + 6 * (effExit - 100));
   });
 
   it("cancels an order and refunds its stake", () => {
@@ -288,6 +293,43 @@ describe("applyAdjustments", () => {
     expect(applied).toHaveLength(1);
     expect(portfolio.orders).toHaveLength(0);
     expect(portfolio.balance).toBe(1000);
+  });
+});
+
+describe("execution costs", () => {
+  it("charges the flat fee below the free-trade threshold and nothing at or above", () => {
+    expect(executionFee(499.99)).toBeCloseTo(COSTS.orderFee);
+    expect(executionFee(500)).toBe(0);
+    expect(executionFee(2000)).toBe(0);
+  });
+
+  it("charges the small-order fee on a market entry below the threshold", () => {
+    const small = order({ entryType: "market", limitPrice: undefined, stake: 100, leverage: 1 });
+    const p: Portfolio = { ...freshPortfolio(900), orders: [small] };
+    const { portfolio } = applyTick(p, { NVDA: q(101, 102, 100) }, { now: NOW, day: DAY, isClose: false });
+    expect(portfolio.positions[0].fees).toBeCloseTo(COSTS.orderFee);
+    expect(portfolio.balance).toBeCloseTo(900 - COSTS.orderFee);
+  });
+
+  it("fills a limit entry exactly at the limit (no spread), fee still applies", () => {
+    const small = order({ stake: 100, leverage: 1 }); // limit 100 → notional 100 < 500
+    const p: Portfolio = { ...freshPortfolio(900), orders: [small] };
+    const { portfolio } = applyTick(p, { NVDA: q(102, 103, 99.5) }, { now: NOW, day: DAY, isClose: false });
+    expect(portfolio.positions[0].entryPrice).toBe(100);
+    expect(portfolio.balance).toBeCloseTo(900 - COSTS.orderFee);
+  });
+
+  it("records round-trip fees on the closed trade and nets the exit fee from the balance", () => {
+    // 1 unit at entry 100 → both legs stay below the 500 threshold.
+    const pos = position({ stake: 100, leverage: 1, entryPrice: 100, units: 1, takeProfit: undefined, fees: COSTS.orderFee });
+    const prev = { NVDA: q(101, 102, 96) };
+    const p = withLastTick({ ...freshPortfolio(900), positions: [pos] }, prev);
+    const { portfolio, events } = applyTick(p, { NVDA: q(96, 102, 94.5) }, { now: NOW, day: DAY, isClose: false });
+    const trade = events[0].kind === "position-closed" ? events[0].trade : null;
+    const effExit = 95 * (1 - COSTS.halfSpread);
+    expect(trade?.fees).toBeCloseTo(2 * COSTS.orderFee); // entry + exit
+    expect(trade?.pnl).toBeCloseTo(effExit - 100);
+    expect(portfolio.balance).toBeCloseTo(900 + 100 + (effExit - 100) - COSTS.orderFee);
   });
 });
 

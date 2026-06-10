@@ -47,6 +47,8 @@ export interface Position {
   takeProfit?: number;
   openedAt: string; // ISO
   thesis: string;
+  /** Execution fees paid so far (entry leg). Missing in pre-cost depots. */
+  fees?: number;
 }
 
 export type CloseReason = "stop" | "take-profit" | "liquidation" | "manual" | "expired";
@@ -60,6 +62,8 @@ export interface ClosedTrade {
   entryPrice: number;
   exitPrice: number;
   pnl: number; // realized, capped at -stake (can never lose more than the margin)
+  /** Round-trip execution fees (entry + exit). Missing in pre-cost depots. */
+  fees?: number;
   reason: Exclude<CloseReason, "expired">;
   openedAt: string;
   closedAt: string;
@@ -81,6 +85,21 @@ export const GUARDRAILS = {
   /** Max stake per trade as a fraction of current equity (play-money depot). */
   maxStakeFraction: 0.2,
   maxTradesPerDay: 3,
+} as const;
+
+/**
+ * Simulated execution costs so the paper performance doesn't flatter
+ * (Smartbroker+/gettex-style fee schedule, see ADR 0002). The half-spread hits
+ * market-type executions only (market entry, stop, manual close, liquidation);
+ * limit-type fills (limit entry, take-profit) guarantee their level.
+ */
+export const COSTS = {
+  /** Half-spread applied against the trade per market-type execution. */
+  halfSpread: 0.001,
+  /** Flat fee per execution below the free-trade threshold. */
+  orderFee: 0.99,
+  /** Order volume (notional) at/above which an execution is free. */
+  freeFrom: 500,
 } as const;
 
 /** A trade Mr Ape (Opus) wants to place at the Kandidatenkür. */

@@ -74,10 +74,11 @@ async function main(): Promise<void> {
   console.log(`[scan] ${LABEL} report sent.`);
 
   // Kandidatenkür: opt-in (ENABLE_PAPER_TRADING), only after the PreUS scan —
-  // fresh data, US open is 15 minutes away. Sonnet researches, Opus decides.
+  // fresh data, US open is 15 minutes away. Sonnet researches + debattiert,
+  // Opus decides.
   if (env.paperTradingEnabled && LABEL === "PreUS") {
     const dir = dataDir();
-    const startBalance = Number(process.env.PAPER_START_BALANCE ?? "1000");
+    const startBalance = Number(process.env.PAPER_START_BALANCE ?? "2000");
     const scanSummary = [
       challenge.summary,
       ...challenge.verdicts.map((v) => `${v.ticker}: ${v.verdict}${v.thesis ? ` — ${v.thesis}` : ""}`),
@@ -93,6 +94,7 @@ async function main(): Promise<void> {
         readJournalTail: () => readJournalTail(dir),
         fetchQuotes: (tickers) => fetchTickQuotes(tickers, fetch),
         researchRunner: createClaudeRunner({ model: "sonnet", allowedTools: ["WebSearch", "Skill"] }),
+        debateRunner: createClaudeRunner({ model: "sonnet" }),
         decideRunner: createClaudeRunner({ model: "opus" }),
         send: (text) => telegram.sendMessage(text),
         berlinDay,

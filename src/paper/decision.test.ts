@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { extractJson, parseAdminAction, parseDecision, parseDossier, parseTickResponse } from "./decision";
+import { extractJson, parseAdminAction, parseDebate, parseDecision, parseDossier, parseTickResponse } from "./decision";
 
 describe("extractJson", () => {
   it("extracts a balanced object despite surrounding prose and nested braces", () => {
@@ -10,6 +10,31 @@ describe("extractJson", () => {
   it("returns null for no/broken JSON", () => {
     expect(extractJson("kein json")).toBeNull();
     expect(extractJson("{broken: }")).toBeNull();
+  });
+});
+
+describe("parseDebate", () => {
+  it("parses bull/bear entries despite surrounding prose and uppercases tickers", () => {
+    const raw = 'Meine Debatte:\n{"debates":[{"ticker":"nvda","bull":"Momentum nach Earnings","bear":"überkauft, Gap-Risiko"}]}\nFertig.';
+    expect(parseDebate(raw)).toEqual({
+      debates: [{ ticker: "NVDA", bull: "Momentum nach Earnings", bear: "überkauft, Gap-Risiko" }],
+    });
+  });
+
+  it("returns null for missing or non-array debates", () => {
+    expect(parseDebate("kein json")).toBeNull();
+    expect(parseDebate('{"debates": "nope"}')).toBeNull();
+  });
+
+  it("drops entries without a valid ticker, keeps partial bull/bear as empty strings", () => {
+    const raw = JSON.stringify({
+      debates: [
+        { ticker: "", bull: "a", bear: "b" },
+        { ticker: "TSLA", bull: "nur Bull-Case" },
+        { ticker: "not a ticker!", bull: "x", bear: "y" },
+      ],
+    });
+    expect(parseDebate(raw)).toEqual({ debates: [{ ticker: "TSLA", bull: "nur Bull-Case", bear: "" }] });
   });
 });
 

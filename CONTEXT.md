@@ -26,8 +26,14 @@ deterministisch geprüft; nur wenn es etwas zu entscheiden gibt, darf Mr Ape
 
 ### Kandidatenkür
 Der eine Entscheidungspunkt pro Handelstag (direkt nach dem PreUS-Lauf), an dem
-Mr Ape (Opus) auf Basis des Dossiers bis zu 3 Trade-Kandidaten in Orders
-verwandelt.
+Mr Ape (Opus) auf Basis des Dossiers und der Debatte bis zu 3 Trade-Kandidaten
+in Orders verwandelt.
+
+### Debatte (Advocatus Diaboli)
+Der adversariale Zwischenschritt der Kür: Sonnet formuliert für jeden
+Dossier-Kandidaten den stärksten Bull- UND Bear-Case, ohne zu empfehlen.
+Die Debatte informiert die Entscheidung; fällt sie aus, entscheidet Mr Ape
+ohne sie.
 
 ### Dossier
 Die von Sonnet recherchierte Entscheidungsgrundlage für die Kandidatenkür:
@@ -55,3 +61,6 @@ Eine offene Order gilt als ausgeführt, wenn der Kurs ihr Niveau seit dem letzte
 Tick nachweislich erreicht hat: entweder hat der Kurs das Niveau zwischen zwei
 Ticks gekreuzt, oder das Tages-High/Low hat sich seit dem letzten Tick über das
 Niveau hinaus bewegt. Konservativ: ein nicht nachweisbarer Spike füllt nicht.
+Market-artige Ausführungen (Market-Entry, Stop, manueller Close, Liquidation)
+slippen einen halben Spread gegen den Trade; jede Ausführung unter 500 Nominal
+kostet eine Ordergebühr (Smartbroker+-Schema) — die Simulation schönt nicht.

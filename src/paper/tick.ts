@@ -10,7 +10,7 @@ import { appendJournal, berlinDay, berlinStamp, dataDir, loadPortfolio, readJour
 import { runTick } from "./tickPipeline";
 
 const LABEL = process.argv[2] ?? "Tick";
-const START_BALANCE = Number(process.env.PAPER_START_BALANCE ?? "1000");
+const START_BALANCE = Number(process.env.PAPER_START_BALANCE ?? "2000");
 
 async function main(): Promise<void> {
   const env = loadEnv();
