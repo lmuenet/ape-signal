@@ -3,6 +3,7 @@ import { normalizeProfile, DEFAULT_PROFILE, type TradingProfile } from "../core/
 export type Command =
   | { kind: "strategie"; ticker: string; profile: TradingProfile }
   | { kind: "scan" }
+  | { kind: "journal"; text?: string }
   | { kind: "unknown"; text: string };
 
 /** Parse a Telegram message into a typed command. Pure. */
@@ -13,6 +14,11 @@ export function parseCommand(text: string): Command {
   const rest = parts.slice(1);
 
   if (head === "/scan") return { kind: "scan" };
+
+  if (head === "/journal") {
+    const text = rest.join(" ").trim();
+    return text === "" ? { kind: "journal" } : { kind: "journal", text };
+  }
 
   if (head === "/strategie" || head === "/analyse") {
     const ticker = rest[0];

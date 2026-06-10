@@ -17,8 +17,12 @@ cp /opt/ape-signal/systemd/ape-signal-scan@.service /etc/systemd/system/
 cp /opt/ape-signal/systemd/ape-signal-scan-preopen.timer /etc/systemd/system/
 cp /opt/ape-signal/systemd/ape-signal-scan-preus.timer /etc/systemd/system/
 cp /opt/ape-signal/systemd/ape-signal-listener.service /etc/systemd/system/
+cp /opt/ape-signal/systemd/ape-signal-tick@.service /etc/systemd/system/
+cp /opt/ape-signal/systemd/ape-signal-tick.timer /etc/systemd/system/
+cp /opt/ape-signal/systemd/ape-signal-tick-close.timer /etc/systemd/system/
 systemctl daemon-reload
 systemctl enable --now ape-signal-scan-preopen.timer ape-signal-scan-preus.timer
+systemctl enable --now ape-signal-tick.timer ape-signal-tick-close.timer
 systemctl enable --now ape-signal-listener.service
 ```
 
@@ -40,6 +44,13 @@ journalctl -u 'ape-signal-scan@*' -n 20 --no-pager
 Notes:
 - The scan service is a template (`@`); the timers invoke the `PreOpen` / `PreUS`
   instances. `Persistent=true` runs a missed scan after downtime.
+- The paper-trading tick service is also a template: `ape-signal-tick.timer` fires
+  the `Tick` instance half-hourly Mon–Fri 15:30–21:30 Europe/Berlin,
+  `ape-signal-tick-close.timer` fires the `Close` instance at 22:00 (expires day
+  orders, posts the daily summary). Both no-op unless `ENABLE_PAPER_TRADING=1`
+  is set in the env file, so enabling the timers is safe by default. Regular
+  ticks are not `Persistent` (a missed tick is stale; the next is ≤30 min away);
+  the close tick is.
 - The listener is long-running with `Restart=always` (single Telegram poll
   connection per bot token). It persists the `getUpdates` offset to
   `/opt/ape-signal/.telegram-offset` (set via `OFFSET_PATH` in the env file).

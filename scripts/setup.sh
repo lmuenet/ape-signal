@@ -57,8 +57,12 @@ sudo cp "$UNIT_SRC/ape-signal-scan@.service" "$UNIT_DST/"
 sudo cp "$UNIT_SRC/ape-signal-scan-preopen.timer" "$UNIT_DST/"
 sudo cp "$UNIT_SRC/ape-signal-scan-preus.timer" "$UNIT_DST/"
 sudo cp "$UNIT_SRC/ape-signal-listener.service" "$UNIT_DST/"
+sudo cp "$UNIT_SRC/ape-signal-tick@.service" "$UNIT_DST/"
+sudo cp "$UNIT_SRC/ape-signal-tick.timer" "$UNIT_DST/"
+sudo cp "$UNIT_SRC/ape-signal-tick-close.timer" "$UNIT_DST/"
 sudo systemctl daemon-reload
 sudo systemctl enable --now ape-signal-scan-preopen.timer ape-signal-scan-preus.timer
+sudo systemctl enable --now ape-signal-tick.timer ape-signal-tick-close.timer
 sudo systemctl enable --now ape-signal-listener.service
 
 say "Validating configuration"
@@ -68,3 +72,4 @@ npm --prefix "$REPO_DIR" run --silent doctor -- --env-file="$ENV_PATH"
 
 say "Done"
 echo "Scans: Mon-Fri 08:45 & 15:15 Europe/Berlin. Listener: systemctl status ape-signal-listener"
+echo "Paper trading ticks are installed but no-op unless ENABLE_PAPER_TRADING=1 in $ENV_PATH."

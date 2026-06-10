@@ -1,0 +1,13 @@
+[Unit]
+Description=Ape Signal paper-trading tick (half-hourly 15:30-21:30 Europe/Berlin)
+
+[Timer]
+# US session in Berlin wall-clock. The 22:00 closing tick is a separate timer
+# (ape-signal-tick-close.timer). No Persistent: a missed tick is stale; the
+# next one is at most 30 minutes away.
+OnCalendar=Mon..Fri *-*-* 15:30:00 Europe/Berlin
+OnCalendar=Mon..Fri *-*-* 16..21:00,30:00 Europe/Berlin
+Unit=ape-signal-tick@Tick.service
+
+[Install]
+WantedBy=timers.target

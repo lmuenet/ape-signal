@@ -11,8 +11,11 @@ import {
   fetchTradingViewTrend,
 } from "../core/ape-intel";
 import { createTelegramClient } from "./client";
-import { spawnClaudeRunner } from "../claude/invoke";
+import { createClaudeRunner, spawnClaudeRunner } from "../claude/invoke";
 import { parseCommand } from "./commands";
+import { runJournalCommand, type JournalDeps } from "../paper/journalCommand";
+import { fetchTickQuotes } from "../paper/quotes";
+import { appendJournal, dataDir, loadPortfolio, readJournalTail, savePortfolio } from "../paper/store";
 import { readOffset, writeOffset } from "./offset";
 import { runStrategy, formatStrategy, type StrategyDeps } from "../strategy/strategy";
 import { runScan, type ScanDeps } from "../scan/pipeline";
@@ -59,6 +62,16 @@ async function main(): Promise<void> {
     fetchMomentum: () => fetchMomentum(fetch, { limit: 5 }),
   };
 
+  const paperDir = dataDir();
+  const journalDeps: JournalDeps = {
+    loadPortfolio: () => loadPortfolio(paperDir, Number(process.env.PAPER_START_BALANCE ?? "1000")),
+    savePortfolio: (p) => savePortfolio(paperDir, p),
+    appendJournal: (title, body) => appendJournal(paperDir, title, body),
+    readJournalTail: () => readJournalTail(paperDir),
+    fetchQuotes: (tickers) => fetchTickQuotes(tickers, fetch),
+    claudeRunner: createClaudeRunner({ model: "sonnet" }),
+  };
+
   let offset = readOffset(OFFSET_PATH);
   console.log(`[listener] started; offset=${offset}`);
 
@@ -71,7 +84,7 @@ async function main(): Promise<void> {
         const msg = u.message;
         if (!msg?.text) continue;
         if (String(msg.chat.id) !== env.telegramChatId) continue; // whitelist
-        await handle(msg.text, telegram, strategyDeps, scanDeps);
+        await handle(msg.text, telegram, strategyDeps, scanDeps, journalDeps);
       }
     } catch (err) {
       console.error(`[listener] poll error: ${err instanceof Error ? err.message : String(err)}`);
@@ -85,18 +98,21 @@ async function handle(
   telegram: ReturnType<typeof createTelegramClient>,
   strategyDeps: StrategyDeps,
   scanDeps: ScanDeps,
+  journalDeps: JournalDeps,
 ): Promise<void> {
   const cmd = parseCommand(text);
   try {
     if (cmd.kind === "scan") {
       await telegram.sendMessage("Starte Scan…");
       await runScan({ label: "Manual", limit: Number(process.env.SCAN_LIMIT ?? "15") }, scanDeps);
+    } else if (cmd.kind === "journal") {
+      await telegram.sendMessage(await runJournalCommand(cmd.text, journalDeps));
     } else if (cmd.kind === "strategie") {
       await telegram.sendMessage(`Analysiere ${cmd.ticker} (${cmd.profile.risk}/${cmd.profile.horizon})…`);
       const { strategy, raw, quote } = await runStrategy(cmd.ticker, cmd.profile, strategyDeps);
       await telegram.sendMessage(formatStrategy(cmd.ticker, cmd.profile, strategy, raw, quote), { parseMode: "HTML" });
     } else {
-      await telegram.sendMessage("Befehle: /strategie TICKER [conservative|balanced|aggressive] [intraday|swing|position] · /scan");
+      await telegram.sendMessage("Befehle: /strategie TICKER [conservative|balanced|aggressive] [intraday|swing|position] · /scan · /journal [z.B. \"setz dein Guthaben auf 500\"]");
     }
   } catch (err) {
     await telegram.sendMessage(`⚠️ Fehler: ${err instanceof Error ? err.message : String(err)}`);
