@@ -345,3 +345,69 @@ describe("adminAdjust", () => {
     expect(adminAdjust(p, { action: "note" })).toEqual(p);
   });
 });
+
+describe("applyAdjustments: set_wake_band", () => {
+  const wakePos: Position = {
+    id: "P1", ticker: "AAPL", side: "long", stake: 200, leverage: 2,
+    entryPrice: 100, units: 4, stopLoss: 90, openedAt: "2026-06-11T14:00:00.000Z", thesis: "",
+  };
+  const base: Portfolio = { balance: 1000, positions: [wakePos], orders: [], history: [] };
+  const wakeQuotes: QuoteMap = { AAPL: q(100, 101, 99) };
+  const at = "2026-06-11T15:00:00.000Z";
+
+  it("sets both sides when they straddle the current price", () => {
+    const r = applyAdjustments(base, [{ type: "set_wake_band", positionId: "P1", above: 110, below: 95 }], wakeQuotes, at);
+    expect(r.applied).toHaveLength(1);
+    expect(r.portfolio.positions[0]?.wakeAbove).toBe(110);
+    expect(r.portfolio.positions[0]?.wakeBelow).toBe(95);
+  });
+
+  it("clears a side via null", () => {
+    const withBands: Portfolio = { ...base, positions: [{ ...wakePos, wakeAbove: 110, wakeBelow: 95 }] };
+    const r = applyAdjustments(withBands, [{ type: "set_wake_band", positionId: "P1", above: null, below: 95 }], wakeQuotes, at);
+    expect(r.portfolio.positions[0]?.wakeAbove).toBeUndefined();
+    expect(r.portfolio.positions[0]?.wakeBelow).toBe(95);
+  });
+
+  it("rejects a band on the wrong side of the current price", () => {
+    const r = applyAdjustments(base, [{ type: "set_wake_band", positionId: "P1", above: 99, below: 95 }], wakeQuotes, at);
+    expect(r.applied).toHaveLength(0);
+    expect(r.rejected[0]?.reason).toContain("Wake-Band");
+  });
+
+  it("rejects without a current quote", () => {
+    const r = applyAdjustments(base, [{ type: "set_wake_band", positionId: "P1", above: 110, below: 95 }], {}, at);
+    expect(r.rejected).toHaveLength(1);
+  });
+});
+
+describe("wake bands through placeOrders and fill", () => {
+  const empty: Portfolio = { balance: 1000, positions: [], orders: [], history: [] };
+  const wakeQuotes: QuoteMap = { AAPL: q(100, 101, 99) };
+  const opts = { now: "2026-06-11T13:00:00.000Z", day: "2026-06-11" };
+
+  const decision = (over: Record<string, unknown> = {}) => ({
+    ticker: "AAPL", side: "long" as const, stake: 100, leverage: 1, entry: "market" as const,
+    stopLoss: 90, thesis: "", ...over,
+  });
+
+  it("carries valid bands onto the order", () => {
+    const r = placeOrders(empty, [decision({ wakeAbove: 110, wakeBelow: 95 })], wakeQuotes, opts);
+    expect(r.accepted[0]?.wakeAbove).toBe(110);
+    expect(r.accepted[0]?.wakeBelow).toBe(95);
+  });
+
+  it("silently drops a band on the wrong side (band is soft, trade stays)", () => {
+    const r = placeOrders(empty, [decision({ wakeAbove: 99, wakeBelow: 95 })], wakeQuotes, opts);
+    expect(r.accepted).toHaveLength(1);
+    expect(r.accepted[0]?.wakeAbove).toBeUndefined();
+    expect(r.accepted[0]?.wakeBelow).toBe(95);
+  });
+
+  it("copies bands from order to position on fill", () => {
+    const placed = placeOrders(empty, [decision({ wakeAbove: 110, wakeBelow: 95 })], wakeQuotes, opts);
+    const ticked = applyTick(placed.portfolio, wakeQuotes, { now: "2026-06-11T13:35:00.000Z", day: "2026-06-11", isClose: false });
+    expect(ticked.portfolio.positions[0]?.wakeAbove).toBe(110);
+    expect(ticked.portfolio.positions[0]?.wakeBelow).toBe(95);
+  });
+});

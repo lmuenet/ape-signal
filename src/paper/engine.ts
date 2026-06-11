@@ -160,6 +160,8 @@ export function applyTick(p: Portfolio, quotes: QuoteMap, opts: TickOptions): Ti
           units: (order.stake * order.leverage) / fillPrice,
           stopLoss: order.stopLoss,
           takeProfit: order.takeProfit,
+          wakeAbove: order.wakeAbove,
+          wakeBelow: order.wakeBelow,
           openedAt: opts.now,
           thesis: order.thesis,
           fees: entryFee,
@@ -296,6 +298,10 @@ export function placeOrders(
     const stake = Math.min(d.stake, maxStake, portfolio.balance);
     if (stake <= 0) return reject("kein freies Guthaben für den Einsatz");
 
+    // Wake bands are soft: an invalid side is dropped, never a trade rejection.
+    const wakeAbove = typeof d.wakeAbove === "number" && d.wakeAbove > reference ? d.wakeAbove : undefined;
+    const wakeBelow = typeof d.wakeBelow === "number" && d.wakeBelow > 0 && d.wakeBelow < reference ? d.wakeBelow : undefined;
+
     const order: EntryOrder = {
       id: `${ticker}-${opts.day}-${placedBefore + accepted.length + 1}`,
       ticker,
@@ -306,6 +312,8 @@ export function placeOrders(
       limitPrice: d.entry === "market" ? undefined : d.entry,
       stopLoss: d.stopLoss,
       takeProfit: d.takeProfit,
+      wakeAbove,
+      wakeBelow,
       thesis: d.thesis ?? "",
       createdAt: opts.now,
       day: opts.day,
@@ -393,6 +401,25 @@ export function applyAdjustments(
         }
       }
       portfolio = replacePosition(portfolio, { ...pos, takeProfit: adj.price ?? undefined });
+      applied.push(adj);
+    } else if (adj.type === "set_wake_band") {
+      if (!q) {
+        reject("kein aktueller Kurs — Wake-Band unverändert");
+        continue;
+      }
+      if (adj.above !== null && !(adj.above > q.close)) {
+        reject("Wake-Band oben muss über dem aktuellen Kurs liegen");
+        continue;
+      }
+      if (adj.below !== null && !(adj.below > 0 && adj.below < q.close)) {
+        reject("Wake-Band unten muss unter dem aktuellen Kurs liegen");
+        continue;
+      }
+      portfolio = replacePosition(portfolio, {
+        ...pos,
+        wakeAbove: adj.above ?? undefined,
+        wakeBelow: adj.below ?? undefined,
+      });
       applied.push(adj);
     } else {
       // close_position
