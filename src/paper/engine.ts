@@ -224,7 +224,9 @@ export function applyTick(p: Portfolio, quotes: QuoteMap, opts: TickOptions): Ti
   }
 
   return {
+    // Spread first: meta fields like lastManagerCallAt must survive a tick.
     portfolio: {
+      ...p,
       balance,
       positions: remaining,
       orders,
