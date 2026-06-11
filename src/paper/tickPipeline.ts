@@ -1,12 +1,21 @@
-// src/paper/tickPipeline.ts — one tick of Mr Ape's depot: deterministic fill
-// check first (always), then — only if there is anything to manage — one
-// Sonnet call to adjust stops/limits. Telegram hears about events and the
-// daily summary; silent ticks post nothing.
+// src/paper/tickPipeline.ts — one MONITOR tick of Mr Ape's depot (ADR 0003):
+// deterministic fill check every run; the MANAGER (one Sonnet call) is woken
+// only by a hard event, a breached wake band (cooldown-limited) or the close.
+// Telegram hears events, the bundled manager note and the daily summary;
+// silent monitor ticks post nothing.
 import { applyAdjustments, applyTick } from "./engine";
-import { formatDailySummary, formatEvent, renderPortfolio, renderQuotes } from "./format";
+import { checkWakeBands, consumeBands, ensureBands, type WakeBreach } from "./wake";
+import {
+  describeAdjustment,
+  formatDailySummary,
+  formatEvent,
+  formatManagerNote,
+  renderPortfolio,
+  renderQuotes,
+} from "./format";
 import { buildTickPrompt } from "./prompts";
 import { parseTickResponse } from "./decision";
-import type { Portfolio, QuoteMap, TickEvent } from "./types";
+import { WAKE, type Portfolio, type QuoteMap, type TickEvent } from "./types";
 
 export interface TickDeps {
   loadPortfolio: () => Portfolio;
@@ -24,6 +33,10 @@ export interface TickDeps {
 
 export interface TickOptions {
   isClose: boolean;
+}
+
+function describeBreach(b: WakeBreach): string {
+  return `⚡ ${b.ticker}: Kurs ${b.price} riss Wake-Band ${b.side === "above" ? "oben" : "unten"} (${b.level})`;
 }
 
 export async function runTick(opts: TickOptions, deps: TickDeps): Promise<void> {
@@ -55,12 +68,16 @@ export async function runTick(opts: TickOptions, deps: TickDeps): Promise<void> 
     }
   }
 
+  // --- Monitor path: deterministic engine + wake-band check. ---
   const { portfolio: afterFills, events } = applyTick(portfolio, quotes, {
     now: now.toISOString(),
     day,
     isClose: opts.isClose,
   });
   portfolio = afterFills;
+
+  const breaches = checkWakeBands(portfolio.positions, quotes);
+  if (breaches.length > 0) portfolio = consumeBands(portfolio, breaches);
   deps.savePortfolio(portfolio);
 
   if (events.length > 0) {
@@ -69,8 +86,14 @@ export async function runTick(opts: TickOptions, deps: TickDeps): Promise<void> 
     await deps.send(lines.join("\n"));
   }
 
-  // Manager call: only when there is something to manage.
-  if (portfolio.positions.length > 0 || portfolio.orders.length > 0) {
+  // --- Manager path: wake Sonnet only with a reason (ADR 0003). ---
+  const hasOpen = portfolio.positions.length > 0 || portfolio.orders.length > 0;
+  const cooldownOver =
+    portfolio.lastManagerCallAt === undefined ||
+    now.getTime() - Date.parse(portfolio.lastManagerCallAt) >= WAKE.cooldownMinutes * 60_000;
+  const wake = hasOpen && (events.length > 0 || opts.isClose || (breaches.length > 0 && cooldownOver));
+
+  if (wake) {
     try {
       const raw = await deps.claudeRunner(
         buildTickPrompt({
@@ -78,15 +101,17 @@ export async function runTick(opts: TickOptions, deps: TickDeps): Promise<void> 
           portfolioBlock: renderPortfolio(portfolio, quotes),
           quotesBlock: renderQuotes(quotes),
           eventsBlock: events.map(formatEvent).join("\n"),
+          wakeBlock: breaches.map(describeBreach).join("\n"),
           journalTail: deps.readJournalTail(),
           isClose: opts.isClose,
         }),
       );
+      portfolio = { ...portfolio, lastManagerCallAt: now.toISOString() };
+
       const response = parseTickResponse(raw);
       if (response && (response.adjustments.length > 0 || response.journal.trim() !== "")) {
         const result = applyAdjustments(portfolio, response.adjustments, quotes, now.toISOString());
         portfolio = result.portfolio;
-        deps.savePortfolio(portfolio);
 
         const noteLines: string[] = [];
         if (response.journal.trim() !== "") noteLines.push(response.journal.trim());
@@ -94,32 +119,27 @@ export async function runTick(opts: TickOptions, deps: TickDeps): Promise<void> 
         for (const r of result.rejected) noteLines.push(`✗ abgelehnt (${r.reason}): ${describeAdjustment(r.adjustment)}`);
         if (noteLines.length > 0) deps.appendJournal(`Tick ${stamp.slice(11)} — Mr Ape`, noteLines.join("\n"));
 
-        // Closes initiated by Mr Ape are fills the user should see.
         const closeEvents = result.events.filter((e: TickEvent) => e.kind === "position-closed");
-        if (closeEvents.length > 0) await deps.send(closeEvents.map(formatEvent).join("\n"));
+        const bundle = formatManagerNote(stamp.slice(11), response.journal, result.applied, result.rejected, closeEvents);
+        if (bundle !== "") await deps.send(bundle);
       }
+      deps.savePortfolio(portfolio);
     } catch (err) {
       // Stops stay where they are — the deterministic engine keeps protecting.
       console.error(`[tick] manager call failed, keeping current stops: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 
+  // --- Fallback bands: every quoted position always carries a band. ---
+  const ensured = ensureBands(portfolio, quotes);
+  if (ensured.changed) {
+    portfolio = ensured.portfolio;
+    deps.savePortfolio(portfolio);
+  }
+
   if (opts.isClose && hadActivity) {
     const summary = formatDailySummary(portfolio, quotes, day);
     deps.appendJournal("Tagesabschluss", summary);
     await deps.send(summary);
-  }
-}
-
-function describeAdjustment(a: import("./types").Adjustment): string {
-  switch (a.type) {
-    case "set_stop":
-      return `Stop von ${a.positionId} auf ${a.price}`;
-    case "set_take_profit":
-      return `Take-Profit von ${a.positionId} auf ${a.price === null ? "entfernt" : a.price}`;
-    case "close_position":
-      return `Position ${a.positionId} schließen`;
-    case "cancel_order":
-      return `Order ${a.orderId} streichen`;
   }
 }

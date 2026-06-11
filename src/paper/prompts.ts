@@ -141,11 +141,14 @@ export function buildDecisionPrompt(input: DecisionPromptInput): string {
     "- entry: \"market\" (füllt beim nächsten Tick) oder eine Zahl (Limit-Level; füllt, wenn",
     "  der Kurs es nachweislich berührt). Unausgeführte Orders verfallen zum Handelsschluss.",
     "- Verlust ≥ Einsatz wird zwangsliquidiert. Swing-Stil: Haltedauer Tage, kein Daytrading.",
+    "- Optional pro Trade: wakeAbove/wakeBelow — ein Wake-Up-Band (weiche Schwellen, die",
+    "  dich im Tagesverlauf wecken, ohne zu handeln). Ohne Angabe leitet das System",
+    "  Bänder automatisch ab.",
     "",
     "Antworte mit GENAU diesem JSON-Format:",
     "{",
     '  "trades": [',
-    '    { "ticker": "XYZ", "side": "long", "stake": 200, "leverage": 2, "entry": "market", "stopLoss": 95.5, "takeProfit": 120, "thesis": "1-2 Sätze: warum dieser Trade, warum jetzt" }',
+    '    { "ticker": "XYZ", "side": "long", "stake": 200, "leverage": 2, "entry": "market", "stopLoss": 95.5, "takeProfit": 120, "wakeAbove": 115, "wakeBelow": 100, "thesis": "1-2 Sätze: warum dieser Trade, warum jetzt" }',
     "  ],",
     '  "journal": "Dein Journal-Eintrag zur heutigen Kür: Marktlage, warum diese Trades (oder keine), was du beobachtest (3-6 Sätze)"',
     "}",
@@ -161,6 +164,7 @@ export interface TickPromptInput {
   portfolioBlock: string;
   quotesBlock: string;
   eventsBlock: string; // fills/expiries that just happened ("" if none)
+  wakeBlock: string; // breached wake bands that triggered this call ("" if none)
   journalTail: string;
   isClose: boolean;
 }
@@ -182,6 +186,7 @@ export function buildTickPrompt(input: TickPromptInput): string {
     input.quotesBlock,
     "",
     input.eventsBlock.trim() === "" ? "" : `## Gerade passiert\n${input.eventsBlock}\n`,
+    input.wakeBlock.trim() === "" ? "" : `## Weckgrund\n${input.wakeBlock}\n`,
     "## Dein Journal (letzte Einträge)",
     input.journalTail.trim() === "" ? "(noch leer)" : input.journalTail,
     "",
@@ -189,6 +194,10 @@ export function buildTickPrompt(input: TickPromptInput): string {
     "- Ein neuer Stop muss auf der Verlustseite des AKTUELLEN Kurses liegen (long: darunter,",
     "  short: darüber), sonst lehnt das System ihn ab. Stops nachziehen (trailing) ist gut,",
     "  hektisches Hin-und-Her ist schlecht — ändere nur mit Grund.",
+    "- Wake-Up-Bänder (wakeBelow/wakeAbove) sind WEICHE Schwellen: Sie handeln nicht,",
+    "  sie wecken dich nur. Ein gerissenes Band ist verbraucht — setze nach einem Weckruf",
+    "  neue Bänder dort, wo du den nächsten Blick brauchst; sonst leitet das System",
+    "  automatisch welche ab (halbe Distanz zu Stop bzw. Take-Profit).",
     '- Keine Änderung nötig? Leeres adjustments-Array und "journal": null.',
     "",
     "Antworte mit GENAU diesem JSON-Format:",
@@ -196,6 +205,7 @@ export function buildTickPrompt(input: TickPromptInput): string {
     '  "adjustments": [',
     '    { "type": "set_stop", "positionId": "...", "price": 101.5 },',
     '    { "type": "set_take_profit", "positionId": "...", "price": 130 },',
+    '    { "type": "set_wake_band", "positionId": "...", "above": 112.5, "below": 98 },',
     '    { "type": "close_position", "positionId": "..." },',
     '    { "type": "cancel_order", "orderId": "..." }',
     "  ],",

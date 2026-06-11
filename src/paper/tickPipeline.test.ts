@@ -76,8 +76,9 @@ describe("runTick", () => {
     expect(journal[0][1]).toContain("TSLA");
   });
 
-  it("applies a valid Sonnet stop adjustment and journals Mr Ape's note", async () => {
-    const p: Portfolio = { ...freshPortfolio(800), positions: [position()], lastTick: { at: "x", day: "2026-06-09", quotes: { NVDA: { close: 108, changePct: 0, high: 109, low: 99 } } } };
+  it("applies a Sonnet stop adjustment after a band breach and posts the bundled note", async () => {
+    // wakeAbove 109 < close 110 → breach wakes the manager (ADR 0003)
+    const p: Portfolio = { ...freshPortfolio(800), positions: [position({ wakeAbove: 109, wakeBelow: 100 })], lastTick: { at: "x", day: "2026-06-09", quotes: { NVDA: { close: 108, changePct: 0, high: 109, low: 99 } } } };
     const raw = JSON.stringify({
       adjustments: [{ type: "set_stop", positionId: position().id, price: 102 }],
       journal: "Stop nachgezogen, Gewinn absichern.",
@@ -86,11 +87,13 @@ describe("runTick", () => {
     await runTick({ isClose: false }, deps);
     expect(saved.at(-1)?.positions[0].stopLoss).toBe(102);
     expect(journal.some(([, body]) => body.includes("Stop nachgezogen"))).toBe(true);
-    expect(sent).toHaveLength(0); // stop adjustments are journal-only
+    const bundle = sent.find((m) => m.includes("Manager-Tick"));
+    expect(bundle).toContain("Stop nachgezogen");
+    expect(bundle).toContain("🔧 Stop von NVDA-2026-06-09-1 auf 102");
   });
 
-  it("posts a Mr-Ape-initiated close to Telegram", async () => {
-    const p: Portfolio = { ...freshPortfolio(800), positions: [position()], lastTick: { at: "x", day: "2026-06-09", quotes: { NVDA: { close: 108, changePct: 0, high: 109, low: 99 } } } };
+  it("posts a Mr-Ape-initiated close to Telegram (inside the bundle)", async () => {
+    const p: Portfolio = { ...freshPortfolio(800), positions: [position({ wakeAbove: 109 })], lastTick: { at: "x", day: "2026-06-09", quotes: { NVDA: { close: 108, changePct: 0, high: 109, low: 99 } } } };
     const raw = JSON.stringify({
       adjustments: [{ type: "close_position", positionId: position().id }],
       journal: "These tot, raus hier.",
@@ -137,5 +140,73 @@ describe("runTick", () => {
     expect(saved.at(-1)?.orders).toHaveLength(0);
     expect(saved.at(-1)?.balance).toBe(1000);
     expect(sent.some((m) => m.includes("Order verfallen"))).toBe(true);
+  });
+});
+
+describe("monitor/manager split (ADR 0003)", () => {
+  const NOW_ISO = NOW.toISOString();
+  const prevTick = { at: "x", day: "2026-06-09", quotes: { NVDA: { close: 108, changePct: 0, high: 109, low: 99 } } };
+
+  it("silent monitor tick: inside the band → no Sonnet call, no Telegram", async () => {
+    const p: Portfolio = { ...freshPortfolio(800), positions: [position({ wakeAbove: 120, wakeBelow: 90 })], lastTick: prevTick };
+    const { deps, sent } = makeDeps(p, { NVDA: { close: 110, changePct: 1, high: 111, low: 99 } });
+    await runTick({ isClose: false }, deps);
+    expect(deps.claudeRunner).not.toHaveBeenCalled();
+    expect(sent).toEqual([]);
+  });
+
+  it("band breach wakes the manager, consumes the band and stamps the cooldown", async () => {
+    const p: Portfolio = { ...freshPortfolio(800), positions: [position({ wakeAbove: 109, wakeBelow: 90 })], lastTick: prevTick };
+    const { deps, saved } = makeDeps(p, { NVDA: { close: 110, changePct: 1, high: 111, low: 99 } });
+    await runTick({ isClose: false }, deps);
+    expect(deps.claudeRunner).toHaveBeenCalledTimes(1);
+    const final = saved.at(-1)!;
+    expect(final.lastManagerCallAt).toBe(NOW_ISO);
+  });
+
+  it("band breach inside the cooldown does NOT wake the manager", async () => {
+    const p: Portfolio = {
+      ...freshPortfolio(800),
+      positions: [position({ wakeAbove: 109, wakeBelow: 90 })],
+      lastTick: prevTick,
+      lastManagerCallAt: "2026-06-09T13:50:00.000Z", // 10 min ago < 15 min cooldown
+    };
+    const { deps } = makeDeps(p, { NVDA: { close: 110, changePct: 1, high: 111, low: 99 } });
+    await runTick({ isClose: false }, deps);
+    expect(deps.claudeRunner).not.toHaveBeenCalled();
+  });
+
+  it("a hard event (stop fill) wakes the manager even inside the cooldown", async () => {
+    // P1 stops out at 95 (new day low); P2 (deep stop) survives, so there is
+    // still something to manage — the event must bypass the band cooldown.
+    const survivor = position({ id: "NVDA-2026-06-09-2", stopLoss: 70, wakeAbove: 200, wakeBelow: 75 });
+    const p: Portfolio = {
+      ...freshPortfolio(800),
+      positions: [position(), survivor],
+      lastTick: prevTick,
+      lastManagerCallAt: "2026-06-09T13:59:00.000Z", // 1 min ago — inside the cooldown
+    };
+    const { deps, sent } = makeDeps(p, { NVDA: { close: 96, changePct: -2, high: 109, low: 94 } });
+    await runTick({ isClose: false }, deps);
+    expect(sent.some((m) => m.includes("Stop-Loss"))).toBe(true);
+    expect(deps.claudeRunner).toHaveBeenCalledTimes(1);
+  });
+
+  it("derives fallback bands for positions without bands", async () => {
+    const p: Portfolio = { ...freshPortfolio(800), positions: [position()], lastTick: prevTick };
+    const { deps, saved } = makeDeps(p, { NVDA: { close: 110, changePct: 1, high: 111, low: 99 } });
+    await runTick({ isClose: false }, deps);
+    const final = saved.at(-1)!;
+    // stop 95, close 110, no TP → stopDist 15 → below 102.5, above 117.5
+    expect(final.positions[0]?.wakeBelow).toBe(102.5);
+    expect(final.positions[0]?.wakeAbove).toBe(117.5);
+  });
+
+  it("close tick always wakes the manager and posts the summary", async () => {
+    const p: Portfolio = { ...freshPortfolio(800), positions: [position({ wakeAbove: 120, wakeBelow: 90 })], lastTick: prevTick };
+    const { deps, sent } = makeDeps(p, { NVDA: { close: 110, changePct: 1, high: 111, low: 99 } });
+    await runTick({ isClose: true }, deps);
+    expect(deps.claudeRunner).toHaveBeenCalledTimes(1);
+    expect(sent.some((m) => m.includes("Tagesabschluss"))).toBe(true);
   });
 });

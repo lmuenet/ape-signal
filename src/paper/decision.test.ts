@@ -132,3 +132,39 @@ describe("parseAdminAction", () => {
     expect(parseAdminAction('{"action":"withdraw"}')).toBeNull();
   });
 });
+
+describe("wake bands (ADR 0003)", () => {
+  it("parses set_wake_band with numbers and nulls", () => {
+    const raw = JSON.stringify({
+      adjustments: [
+        { type: "set_wake_band", positionId: "P1", above: 110.5, below: 95 },
+        { type: "set_wake_band", positionId: "P2", above: null, below: 250 },
+      ],
+      journal: "",
+    });
+    expect(parseTickResponse(raw)?.adjustments).toEqual([
+      { type: "set_wake_band", positionId: "P1", above: 110.5, below: 95 },
+      { type: "set_wake_band", positionId: "P2", above: null, below: 250 },
+    ]);
+  });
+
+  it("drops a set_wake_band with a malformed side", () => {
+    const raw = JSON.stringify({
+      adjustments: [{ type: "set_wake_band", positionId: "P1", above: "high", below: 95 }],
+      journal: "",
+    });
+    expect(parseTickResponse(raw)?.adjustments).toEqual([]);
+  });
+
+  it("parses optional wakeAbove/wakeBelow on Kuer trades", () => {
+    const raw = JSON.stringify({
+      trades: [
+        { ticker: "AAPL", side: "long", stake: 200, leverage: 2, entry: "market", stopLoss: 90, wakeAbove: 110, wakeBelow: 95 },
+      ],
+      journal: "",
+    });
+    const d = parseDecision(raw);
+    expect(d?.trades[0]?.wakeAbove).toBe(110);
+    expect(d?.trades[0]?.wakeBelow).toBe(95);
+  });
+});
