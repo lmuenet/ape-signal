@@ -104,6 +104,8 @@ export function parseDecision(raw: string): Decision | null {
         entry,
         stopLoss,
         takeProfit: numOr(o.takeProfit),
+        wakeAbove: numOr(o.wakeAbove),
+        wakeBelow: numOr(o.wakeBelow),
         thesis: str(o.thesis),
       };
     })
@@ -130,6 +132,13 @@ export function parseTickResponse(raw: string): TickResponse | null {
       if (o.type === "set_take_profit") {
         const price = o.price === null ? null : numOr(o.price);
         return positionId && price !== undefined ? { type: "set_take_profit", positionId, price } : null;
+      }
+      if (o.type === "set_wake_band") {
+        const above = o.above === null ? null : numOr(o.above);
+        const below = o.below === null ? null : numOr(o.below);
+        return positionId && above !== undefined && below !== undefined
+          ? { type: "set_wake_band", positionId, above, below }
+          : null;
       }
       if (o.type === "close_position") {
         return positionId ? { type: "close_position", positionId } : null;
