@@ -117,6 +117,8 @@ function describeAdjustment(a: import("./types").Adjustment): string {
       return `Stop von ${a.positionId} auf ${a.price}`;
     case "set_take_profit":
       return `Take-Profit von ${a.positionId} auf ${a.price === null ? "entfernt" : a.price}`;
+    case "set_wake_band":
+      return `Wake-Band von ${a.positionId}: oben ${a.above ?? "—"}, unten ${a.below ?? "—"}`;
     case "close_position":
       return `Position ${a.positionId} schließen`;
     case "cancel_order":

@@ -29,6 +29,9 @@ export interface EntryOrder {
   limitPrice?: number; // fill when the price provably touches this level
   stopLoss: number; // mandatory
   takeProfit?: number;
+  /** Wake-up band carried into the position on fill (ADR 0003). */
+  wakeAbove?: number;
+  wakeBelow?: number;
   thesis: string;
   createdAt: string; // ISO
   day: string; // Berlin trading day (YYYY-MM-DD) — expiry day
@@ -45,6 +48,9 @@ export interface Position {
   units: number; // notional / entryPrice
   stopLoss: number;
   takeProfit?: number;
+  /** Soft thresholds that wake the manager (never trade). See ADR 0003. */
+  wakeAbove?: number;
+  wakeBelow?: number;
   openedAt: string; // ISO
   thesis: string;
   /** Execution fees paid so far (entry leg). Missing in pre-cost depots. */
@@ -77,6 +83,8 @@ export interface Portfolio {
   history: ClosedTrade[];
   /** Last processed tick — the fill evidence baseline for the next tick. */
   lastTick?: { at: string; day: string; quotes: QuoteMap };
+  /** Last manager (Sonnet) call — cooldown baseline for band wakes. */
+  lastManagerCallAt?: string;
 }
 
 /** Balanced-mode guardrails — enforced by the engine, not by Mr Ape. */
@@ -102,6 +110,14 @@ export const COSTS = {
   freeFrom: 500,
 } as const;
 
+/** Wake-up band policy (ADR 0003): fallback derivation + manager cooldown. */
+export const WAKE = {
+  /** Fraction of the distance to stop/TP at which the fallback band sits. */
+  fallbackFraction: 0.5,
+  /** Minimum minutes between two band-triggered manager calls. */
+  cooldownMinutes: 15,
+} as const;
+
 /** A trade Mr Ape (Opus) wants to place at the Kandidatenkür. */
 export interface TradeDecision {
   ticker: string;
@@ -111,6 +127,8 @@ export interface TradeDecision {
   entry: "market" | number; // number = limit level
   stopLoss: number;
   takeProfit?: number;
+  wakeAbove?: number;
+  wakeBelow?: number;
   thesis: string;
 }
 
@@ -118,6 +136,7 @@ export interface TradeDecision {
 export type Adjustment =
   | { type: "set_stop"; positionId: string; price: number }
   | { type: "set_take_profit"; positionId: string; price: number | null }
+  | { type: "set_wake_band"; positionId: string; above: number | null; below: number | null }
   | { type: "close_position"; positionId: string }
   | { type: "cancel_order"; orderId: string };
 
