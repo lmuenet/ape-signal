@@ -78,6 +78,7 @@ export async function runTick(opts: TickOptions, deps: TickDeps): Promise<void> 
           portfolioBlock: renderPortfolio(portfolio, quotes),
           quotesBlock: renderQuotes(quotes),
           eventsBlock: events.map(formatEvent).join("\n"),
+          wakeBlock: "",
           journalTail: deps.readJournalTail(),
           isClose: opts.isClose,
         }),
