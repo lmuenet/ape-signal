@@ -6,6 +6,7 @@ import { loadEnv } from "../config/env";
 import { createTelegramClient } from "../telegram/client";
 import { createClaudeRunner } from "../claude/invoke";
 import { fetchTickQuotes } from "./quotes";
+import { appendTickHistory } from "./tickHistory";
 import { appendJournal, berlinDay, berlinStamp, dataDir, loadPortfolio, readJournalTail, savePortfolio } from "./store";
 import { runTick } from "./tickPipeline";
 
@@ -29,6 +30,7 @@ async function main(): Promise<void> {
       appendJournal: (title, body) => appendJournal(dir, title, body),
       readJournalTail: () => readJournalTail(dir),
       fetchQuotes: (tickers) => fetchTickQuotes(tickers, fetch),
+      recordTick: (day, atIso, quotes) => appendTickHistory(dir, day, atIso, quotes),
       claudeRunner: createClaudeRunner({ model: "sonnet" }),
       send: (text) => telegram.sendMessage(text),
       berlinDay,

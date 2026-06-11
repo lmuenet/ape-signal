@@ -210,3 +210,18 @@ describe("monitor/manager split (ADR 0003)", () => {
     expect(sent.some((m) => m.includes("Tagesabschluss"))).toBe(true);
   });
 });
+
+describe("tick history recording (ADR 0004)", () => {
+  it("records the tick into the history when quotes were fetched", async () => {
+    const recorded: Array<{ day: string; at: string }> = [];
+    const p: Portfolio = {
+      ...freshPortfolio(800),
+      positions: [position({ wakeAbove: 120, wakeBelow: 90 })],
+      lastTick: { at: "x", day: "2026-06-09", quotes: { NVDA: { close: 108, changePct: 0, high: 109, low: 99 } } },
+    };
+    const { deps } = makeDeps(p, { NVDA: { close: 110, changePct: 1, high: 111, low: 99 } });
+    deps.recordTick = (day, at) => recorded.push({ day, at });
+    await runTick({ isClose: false }, deps);
+    expect(recorded).toEqual([{ day: "2026-06-09", at: NOW.toISOString() }]);
+  });
+});
