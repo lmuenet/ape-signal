@@ -1,6 +1,7 @@
 # ADR 0001 — Fill-Simulation über den TradingView-Scanner statt Intraday-Candles
 
-Datum: 2026-06-09 · Status: akzeptiert
+Datum: 2026-06-09 · Status: akzeptiert · Ergänzt durch ADR 0003 (Tick-Fenster
+seit dem 5-Minuten-Monitor-Tick kleiner — die Fill-Regel ist fensteragnostisch)
 
 ## Kontext
 
