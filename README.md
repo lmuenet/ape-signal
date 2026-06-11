@@ -59,6 +59,25 @@ npm run doctor -- --send-test        # also posts a visible Telegram test messag
 The scans run as systemd timers; the listener is a long-running service. See
 [`systemd/README.md`](systemd/README.md) for the per-unit details.
 
+## Depot UI (optional)
+
+A read-only dashboard for the paper depot — journal, positions with SL/TP and
+wake-band overlays, equity curve. Ships as a Docker container that mounts the
+data directory read-only; the core keeps running on systemd (see ADR 0004).
+
+```bash
+docker build -t ape-signal-ui /opt/ape-signal
+docker run -d --name ape-ui --restart unless-stopped \
+  -p 8744:8744 \
+  -v /opt/ape-signal/data:/data:ro \
+  -e UI_USER=ape -e UI_PASS='pick-a-password' \
+  ape-signal-ui
+```
+
+Open `http://<server>:8744` and log in with `UI_USER`/`UI_PASS`. The UI never
+writes — Telegram remains the push channel for fills and manager decisions.
+Without Docker: `UI_USER=… UI_PASS=… npm run ui` serves the same dashboard.
+
 ## Layout
 
 | Path | Purpose |
@@ -67,6 +86,7 @@ The scans run as systemd timers; the listener is a long-running service. See
 | `src/paper/` | Paper trading: depot engine, fill simulation, ticks, journal |
 | `src/reddit/` | Reddit OAuth client + ticker extraction |
 | `src/telegram/` | Telegram client + long-poll listener |
+| `src/ui/` | Read-only depot UI (Docker, basic auth) |
 | `src/claude/` | `claude -p` invoker (stdout capture + JSON parse) |
 | `src/config/` | Env loading + `doctor` diagnostics |
 | `systemd/` | Timer + service unit files |
