@@ -23,6 +23,8 @@ export interface TickDeps {
   appendJournal: (title: string, body: string) => void;
   readJournalTail: () => string;
   fetchQuotes: (tickers: string[]) => Promise<QuoteMap>;
+  /** Persist this tick's quotes into the tick history (ADR 0004). Optional in tests. */
+  recordTick?: (day: string, atIso: string, quotes: QuoteMap) => void;
   /** Sonnet runner (the manager role). */
   claudeRunner: (prompt: string) => Promise<string>;
   send: (text: string) => Promise<void>;
@@ -65,6 +67,11 @@ export async function runTick(opts: TickOptions, deps: TickDeps): Promise<void> 
       // (state untouched; the next tick's day-extreme rule catches up).
       console.error(`[tick] quote fetch failed, skipping tick: ${err instanceof Error ? err.message : String(err)}`);
       return;
+    }
+    try {
+      deps.recordTick?.(day, now.toISOString(), quotes);
+    } catch (err) {
+      console.error(`[tick] recording tick history failed (charts lose one point): ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 

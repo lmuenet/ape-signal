@@ -1,0 +1,8 @@
+node_modules
+data
+.git
+docs
+systemd
+scripts
+vendor
+*.md
