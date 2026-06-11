@@ -16,9 +16,11 @@ twice-daily, Telegram-delivered trading briefing — all under your own Claude
   deep single-stock analysis.
 - **Paper trading "Mr Ape"** (opt-in, `ENABLE_PAPER_TRADING=1`) — a simulated
   CFD-style depot. After the PreUS scan the LLM picks up to 3 trade candidates;
-  half-hourly ticks during the US session check fills against TradingView
-  quotes; a daily close summary and an append-only trading journal go to
-  Telegram (`/journal` to read or talk to it). No real orders, ever.
+  a 5-minute monitor tick checks fills/stops deterministically against
+  TradingView quotes, and the LLM manager is woken only by fills, breached
+  wake-up bands or the close (ADR 0003). Every manager decision is posted to
+  Telegram; a daily close summary and an append-only trading journal complete
+  the picture (`/journal` to read or talk to it). No real orders, ever.
 
 `ape-intel` is embedded as a git submodule at `vendor/ape-intel` (shared data
 fetchers); `claude -p` runs the reasoning locally under your subscription.
