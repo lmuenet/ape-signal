@@ -3,7 +3,7 @@
 // Sonnet call to adjust stops/limits. Telegram hears about events and the
 // daily summary; silent ticks post nothing.
 import { applyAdjustments, applyTick } from "./engine";
-import { formatDailySummary, formatEvent, renderPortfolio, renderQuotes } from "./format";
+import { describeAdjustment, formatDailySummary, formatEvent, renderPortfolio, renderQuotes } from "./format";
 import { buildTickPrompt } from "./prompts";
 import { parseTickResponse } from "./decision";
 import type { Portfolio, QuoteMap, TickEvent } from "./types";
@@ -108,20 +108,5 @@ export async function runTick(opts: TickOptions, deps: TickDeps): Promise<void> 
     const summary = formatDailySummary(portfolio, quotes, day);
     deps.appendJournal("Tagesabschluss", summary);
     await deps.send(summary);
-  }
-}
-
-function describeAdjustment(a: import("./types").Adjustment): string {
-  switch (a.type) {
-    case "set_stop":
-      return `Stop von ${a.positionId} auf ${a.price}`;
-    case "set_take_profit":
-      return `Take-Profit von ${a.positionId} auf ${a.price === null ? "entfernt" : a.price}`;
-    case "set_wake_band":
-      return `Wake-Band von ${a.positionId}: oben ${a.above ?? "—"}, unten ${a.below ?? "—"}`;
-    case "close_position":
-      return `Position ${a.positionId} schließen`;
-    case "cancel_order":
-      return `Order ${a.orderId} streichen`;
   }
 }

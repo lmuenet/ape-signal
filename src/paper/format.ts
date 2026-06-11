@@ -1,7 +1,7 @@
 // src/paper/format.ts — plain-text rendering of the depot for prompts,
 // Telegram messages and the journal. Pure string builders.
 import { equity, liquidationPrice, positionPnl } from "./engine";
-import type { EntryOrder, Portfolio, Position, QuoteMap, TickEvent } from "./types";
+import type { Adjustment, EntryOrder, Portfolio, Position, QuoteMap, TickEvent } from "./types";
 
 const usd = (n: number) => `${n >= 0 ? "" : "-"}$${Math.abs(n).toFixed(2)}`;
 const sign = (n: number) => `${n >= 0 ? "+" : ""}${n.toFixed(2)}`;
@@ -11,9 +11,13 @@ function positionLine(pos: Position, quotes: QuoteMap): string {
   const pnl = q ? positionPnl(pos, q.close) : null;
   const pnlText = pnl === null ? "Kurs fehlt" : `P&L ${usd(pnl)} (${sign((pnl / pos.stake) * 100)}%)`;
   const tp = pos.takeProfit !== undefined ? `, TP ${pos.takeProfit}` : "";
+  const wake =
+    pos.wakeAbove !== undefined || pos.wakeBelow !== undefined
+      ? `, Wake ${pos.wakeBelow ?? "—"}/${pos.wakeAbove ?? "—"}`
+      : "";
   return (
     `[${pos.id}] ${pos.ticker} ${pos.side} ${pos.leverage}x, Einsatz ${usd(pos.stake)}, ` +
-    `Entry ${pos.entryPrice}${q ? `, Kurs ${q.close}` : ""}, SL ${pos.stopLoss}${tp}, ` +
+    `Entry ${pos.entryPrice}${q ? `, Kurs ${q.close}` : ""}, SL ${pos.stopLoss}${tp}${wake}, ` +
     `Liq ${liquidationPrice(pos).toFixed(2)} — ${pnlText}`
   );
 }
@@ -84,6 +88,47 @@ export function formatKuer(accepted: EntryOrder[], rejectedReasons: string[], jo
   if (journal.trim() !== "") lines.push("", journal.trim());
   lines.push("", "Paper-Trading — kein echtes Geld, keine Anlageberatung.");
   return lines.filter((l) => l !== undefined).join("\n");
+}
+
+/** One human line per manager adjustment (journal + Telegram). */
+export function describeAdjustment(a: Adjustment): string {
+  switch (a.type) {
+    case "set_stop":
+      return `Stop von ${a.positionId} auf ${a.price}`;
+    case "set_take_profit":
+      return `Take-Profit von ${a.positionId} auf ${a.price === null ? "entfernt" : a.price}`;
+    case "set_wake_band":
+      return `Wake-Band von ${a.positionId}: oben ${a.above ?? "—"}, unten ${a.below ?? "—"}`;
+    case "close_position":
+      return `Position ${a.positionId} schließen`;
+    case "cancel_order":
+      return `Order ${a.orderId} streichen`;
+  }
+}
+
+/**
+ * The bundled Telegram message for one manager tick (ADR 0003): the why
+ * (journal note), every applied adjustment, rejections with reason, and
+ * manager-initiated closes. "" when there is nothing to say.
+ */
+export function formatManagerNote(
+  time: string,
+  journal: string,
+  applied: Adjustment[],
+  rejected: Array<{ adjustment: Adjustment; reason: string }>,
+  closeEvents: TickEvent[],
+): string {
+  if (journal.trim() === "" && applied.length === 0 && rejected.length === 0 && closeEvents.length === 0) {
+    return "";
+  }
+  const lines = [`🦍 Mr Ape — Manager-Tick ${time}`];
+  if (journal.trim() !== "") lines.push("", journal.trim());
+  const closes = closeEvents.map(formatEvent);
+  if (closes.length > 0) lines.push("", ...closes);
+  const nonClose = applied.filter((a) => a.type !== "close_position");
+  if (nonClose.length > 0) lines.push("", ...nonClose.map((a) => `🔧 ${describeAdjustment(a)}`));
+  if (rejected.length > 0) lines.push("", ...rejected.map((r) => `✗ abgelehnt (${r.reason}): ${describeAdjustment(r.adjustment)}`));
+  return lines.join("\n");
 }
 
 /** The after-close Telegram daily summary. */
