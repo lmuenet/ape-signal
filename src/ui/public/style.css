@@ -1,0 +1,17 @@
+:root { color-scheme: dark; --bg: #11151c; --card: #1a2029; --line: #2a3342; --fg: #e6e9ef; --dim: #8b96a8; --green: #3fb68b; --red: #e0556a; }
+* { box-sizing: border-box; }
+body { margin: 0; font: 15px/1.5 system-ui, sans-serif; background: var(--bg); color: var(--fg); }
+header { padding: 16px 24px; border-bottom: 1px solid var(--line); display: flex; gap: 24px; align-items: baseline; flex-wrap: wrap; }
+h1 { font-size: 20px; margin: 0; }
+h2 { font-size: 15px; color: var(--dim); text-transform: uppercase; letter-spacing: .06em; }
+main { max-width: 1100px; margin: 0 auto; padding: 16px 24px 64px; }
+.stats { color: var(--dim); }
+.stats b { color: var(--fg); }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; margin: 12px 0; }
+.card .meta { color: var(--dim); font-size: 13px; margin-top: 2px; }
+.pnl-pos { color: var(--green); } .pnl-neg { color: var(--red); }
+.chart { height: 220px; }
+.empty { color: var(--dim); font-style: italic; }
+#journal article { border-top: 1px solid var(--line); padding: 10px 0; }
+#journal h3 { font-size: 14px; margin: 0 0 6px; color: var(--dim); }
+#journal pre { white-space: pre-wrap; font: inherit; margin: 0; }
