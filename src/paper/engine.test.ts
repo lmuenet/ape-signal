@@ -4,6 +4,7 @@ import {
   applyAdjustments,
   applyTick,
   equity,
+  expireDayOrders,
   executionFee,
   liquidationPrice,
   placeOrders,
@@ -409,5 +410,25 @@ describe("wake bands through placeOrders and fill", () => {
     const ticked = applyTick(placed.portfolio, wakeQuotes, { now: "2026-06-11T13:35:00.000Z", day: "2026-06-11", isClose: false });
     expect(ticked.portfolio.positions[0]?.wakeAbove).toBe(110);
     expect(ticked.portfolio.positions[0]?.wakeBelow).toBe(95);
+  });
+});
+
+describe("expireDayOrders (stale-close path, Lebenszeichen spec)", () => {
+  it("expires due day orders, releases the stake and leaves lastTick untouched", () => {
+    const lastTick = { at: NOW, day: DAY, quotes: {} };
+    const p: Portfolio = { ...freshPortfolio(900), orders: [order()], lastTick };
+    const { portfolio, events } = expireDayOrders(p, DAY);
+    expect(portfolio.orders).toHaveLength(0);
+    expect(portfolio.balance).toBe(1100); // 900 + 200 released stake
+    expect(portfolio.lastTick).toBe(lastTick); // evidence baseline untouched
+    expect(events).toEqual([{ kind: "order-expired", order: order() }]);
+  });
+
+  it("keeps orders from a future day", () => {
+    const p: Portfolio = { ...freshPortfolio(900), orders: [order({ day: "2026-06-10" })] };
+    const { portfolio, events } = expireDayOrders(p, DAY);
+    expect(portfolio.orders).toHaveLength(1);
+    expect(portfolio.balance).toBe(900);
+    expect(events).toEqual([]);
   });
 });

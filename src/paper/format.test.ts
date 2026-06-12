@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { describeAdjustment, formatManagerNote, renderPortfolio } from "./format";
+import { describeAdjustment, formatDailySummary, formatManagerNote, renderPortfolio } from "./format";
 import type { Adjustment, Portfolio, Position, QuoteMap, TickEvent } from "./types";
 
 const pos: Position = {
@@ -47,5 +47,24 @@ describe("formatManagerNote", () => {
 
   it('returns "" when there is nothing to say', () => {
     expect(formatManagerNote("15:35", "", [], [], [])).toBe("");
+  });
+});
+
+describe("formatDailySummary extras (Lebenszeichen spec)", () => {
+  const empty: Portfolio = { balance: 800, positions: [], orders: [], history: [] };
+
+  it("marks stale quotes and appends the health line when given", () => {
+    const s = formatDailySummary(empty, {}, "2026-06-12", {
+      staleQuotesFrom: "15:30",
+      healthLine: "Monitor: 5 Ticks ok, 3 Quote-Fehler",
+    });
+    expect(s).toContain("(Kurse von 15:30)");
+    expect(s.trimEnd().endsWith("Monitor: 5 Ticks ok, 3 Quote-Fehler")).toBe(true);
+  });
+
+  it("stays identical to the old output without opts", () => {
+    const s = formatDailySummary(empty, {}, "2026-06-12");
+    expect(s).not.toContain("Kurse von");
+    expect(s).not.toContain("Monitor:");
   });
 });

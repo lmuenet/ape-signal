@@ -23,7 +23,10 @@ Ein häufiges, rein deterministisches Kurs-Update der offenen Positionen währen
 der US-Session (alle 5 Minuten, Mo–Fr 15:30–22:00 Europe/Berlin). Beim
 Monitor-Tick prüft die Engine Fills, Stops, Liquidationen und die
 Wake-Up-Bänder. Monitor-Ticks entscheiden nichts und eröffnen nie neue
-Positionen; sie können einen Manager-Tick auslösen.
+Positionen; sie können einen Manager-Tick auslösen. Bleiben die Kurse mehrere
+Ticks in Folge aus, meldet der Monitor das einmalig per Telegram (mit
+Entwarnung, sobald sie wieder da sind) — Stille heißt immer „ruhiger Markt",
+nie „System tot".
 
 ### Manager-Tick
 Der Moment, in dem Mr Ape (Sonnet) das Depot sieht und Stops/Limits/Bänder
@@ -57,9 +60,12 @@ Scan-Daten, Web-Research, Sentiment (opportunistisch via last30days). Das
 Dossier empfiehlt nicht — es informiert; entschieden wird in der Kür.
 
 ### Tagesabschluss
-Kurzbilanz nach US-Close auf Telegram: Equity, Tages-P&L, offene Positionen.
-Neben Kür, Fills und Manager-Tick-Notizen das einzige proaktive Posting —
-stille Monitor-Ticks posten nichts.
+Kurzbilanz nach US-Close auf Telegram: Equity, Tages-P&L, offene Positionen und
+eine Monitor-Gesundheitszeile (Ticks ok / Quote-Fehler). Der Tagesabschluss ist
+unbedingt: Fehlen frische Kurse, bilanziert er mit den letzten bekannten (als
+solche markiert) — bleibt er um 22:00 ganz aus, ist das System tot. Neben Kür,
+Fills und Manager-Tick-Notizen das einzige proaktive Posting — stille
+Monitor-Ticks posten nichts.
 
 ### Hebel (Position)
 Jede Position ist CFD-artig: Einsatz (Margin) × Hebel = Nominalwert; P&L folgt

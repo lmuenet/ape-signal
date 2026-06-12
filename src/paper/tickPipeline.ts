@@ -3,7 +3,7 @@
 // only by a hard event, a breached wake band (cooldown-limited) or the close.
 // Telegram hears events, the bundled manager note and the daily summary;
 // silent monitor ticks post nothing.
-import { applyAdjustments, applyTick } from "./engine";
+import { applyAdjustments, applyTick, expireDayOrders } from "./engine";
 import { checkWakeBands, consumeBands, ensureBands, type WakeBreach } from "./wake";
 import {
   describeAdjustment,
@@ -15,6 +15,7 @@ import {
 } from "./format";
 import { buildTickPrompt } from "./prompts";
 import { parseTickResponse } from "./decision";
+import { healthLine, recordQuoteFailure, recordQuoteSuccess, type HealthState } from "./health";
 import { WAKE, type Portfolio, type QuoteMap, type TickEvent } from "./types";
 
 export interface TickDeps {
@@ -25,6 +26,10 @@ export interface TickDeps {
   fetchQuotes: (tickers: string[]) => Promise<QuoteMap>;
   /** Persist this tick's quotes into the tick history (ADR 0004). Optional in tests. */
   recordTick?: (day: string, atIso: string, quotes: QuoteMap) => void;
+  /** Operational health for `day` (Lebenszeichen spec): stats + failure counters. */
+  loadHealth: (day: string) => HealthState;
+  /** Persist health. Failures are caught by the pipeline (never break a tick). */
+  saveHealth: (h: HealthState) => void;
   /** Sonnet runner (the manager role). */
   claudeRunner: (prompt: string) => Promise<string>;
   send: (text: string) => Promise<void>;
@@ -39,6 +44,14 @@ export interface TickOptions {
 
 function describeBreach(b: WakeBreach): string {
   return `⚡ ${b.ticker}: Kurs ${b.price} riss Wake-Band ${b.side === "above" ? "oben" : "unten"} (${b.level})`;
+}
+
+function trySaveHealth(deps: TickDeps, h: HealthState): void {
+  try {
+    deps.saveHealth(h);
+  } catch (err) {
+    console.error(`[tick] saving health failed: ${err instanceof Error ? err.message : String(err)}`);
+  }
 }
 
 export async function runTick(opts: TickOptions, deps: TickDeps): Promise<void> {
@@ -58,33 +71,61 @@ export async function runTick(opts: TickOptions, deps: TickDeps): Promise<void> 
     return;
   }
 
+  let health = deps.loadHealth(day);
   let quotes: QuoteMap = {};
+  // The close tick must never skip (it is the daily lifesign): on a fetch
+  // failure it falls back to the last known quotes for VALUATION ONLY.
+  let staleClose = false;
   if (tickers.length > 0) {
     try {
       quotes = await deps.fetchQuotes(tickers);
     } catch (err) {
-      // No quotes → no evidence → skipping the whole tick is the safe move
+      console.error(`[tick] quote fetch failed: ${err instanceof Error ? err.message : String(err)}`);
+      const failed = recordQuoteFailure(health);
+      health = failed.health;
+      trySaveHealth(deps, health);
+      if (failed.alert) {
+        await deps.send(`⚠️ Monitor blind: ${health.consecutiveQuoteFailures} Ticks ohne Kurse — Stops werden nicht geprüft.`);
+      }
+      // No quotes → no evidence → skipping the monitor tick is the safe move
       // (state untouched; the next tick's day-extreme rule catches up).
-      console.error(`[tick] quote fetch failed, skipping tick: ${err instanceof Error ? err.message : String(err)}`);
-      return;
+      if (!opts.isClose) return;
+      staleClose = true;
+      quotes = portfolio.lastTick?.quotes ?? {};
     }
-    try {
-      deps.recordTick?.(day, now.toISOString(), quotes);
-    } catch (err) {
-      console.error(`[tick] recording tick history failed (charts lose one point): ${err instanceof Error ? err.message : String(err)}`);
+    if (!staleClose) {
+      const ok = recordQuoteSuccess(health);
+      health = ok.health;
+      trySaveHealth(deps, health);
+      if (ok.allClear) await deps.send("✅ Monitor wieder ok — Kurse kommen wieder durch.");
+      try {
+        deps.recordTick?.(day, now.toISOString(), quotes);
+      } catch (err) {
+        console.error(`[tick] recording tick history failed (charts lose one point): ${err instanceof Error ? err.message : String(err)}`);
+      }
     }
   }
 
   // --- Monitor path: deterministic engine + wake-band check. ---
-  const { portfolio: afterFills, events } = applyTick(portfolio, quotes, {
-    now: now.toISOString(),
-    day,
-    isClose: opts.isClose,
-  });
-  portfolio = afterFills;
-
-  const breaches = checkWakeBands(portfolio.positions, quotes);
-  if (breaches.length > 0) portfolio = consumeBands(portfolio, breaches);
+  // Stale quotes never drive fills, stops or band checks (they are the
+  // evidence baseline itself); only the time-based expiry still runs.
+  let events: TickEvent[];
+  let breaches: WakeBreach[] = [];
+  if (staleClose) {
+    const expired = expireDayOrders(portfolio, day);
+    portfolio = expired.portfolio;
+    events = expired.events;
+  } else {
+    const afterTick = applyTick(portfolio, quotes, {
+      now: now.toISOString(),
+      day,
+      isClose: opts.isClose,
+    });
+    portfolio = afterTick.portfolio;
+    events = afterTick.events;
+    breaches = checkWakeBands(portfolio.positions, quotes);
+    if (breaches.length > 0) portfolio = consumeBands(portfolio, breaches);
+  }
   deps.savePortfolio(portfolio);
 
   if (events.length > 0) {
@@ -98,7 +139,10 @@ export async function runTick(opts: TickOptions, deps: TickDeps): Promise<void> 
   const cooldownOver =
     portfolio.lastManagerCallAt === undefined ||
     now.getTime() - Date.parse(portfolio.lastManagerCallAt) >= WAKE.cooldownMinutes * 60_000;
-  const wake = hasOpen && (events.length > 0 || opts.isClose || (breaches.length > 0 && cooldownOver));
+  // A stale close never wakes the manager: a close_position adjustment would
+  // execute at stale quotes — exactly the kind of fill stale quotes must not drive.
+  const wake =
+    !staleClose && hasOpen && (events.length > 0 || opts.isClose || (breaches.length > 0 && cooldownOver));
 
   if (wake) {
     try {
@@ -134,18 +178,32 @@ export async function runTick(opts: TickOptions, deps: TickDeps): Promise<void> 
     } catch (err) {
       // Stops stay where they are — the deterministic engine keeps protecting.
       console.error(`[tick] manager call failed, keeping current stops: ${err instanceof Error ? err.message : String(err)}`);
+      try {
+        await deps.send("⚠️ Mr Ape nicht erreichbar (Manager-Call fehlgeschlagen) — Stops bleiben unverändert.");
+      } catch (sendErr) {
+        console.error(`[tick] failed to send manager-failure alert: ${sendErr instanceof Error ? sendErr.message : String(sendErr)}`);
+      }
     }
   }
 
   // --- Fallback bands: every quoted position always carries a band. ---
-  const ensured = ensureBands(portfolio, quotes);
-  if (ensured.changed) {
-    portfolio = ensured.portfolio;
-    deps.savePortfolio(portfolio);
+  if (!staleClose) {
+    const ensured = ensureBands(portfolio, quotes);
+    if (ensured.changed) {
+      portfolio = ensured.portfolio;
+      deps.savePortfolio(portfolio);
+    }
   }
 
   if (opts.isClose && hadActivity) {
-    const summary = formatDailySummary(portfolio, quotes, day);
+    const staleQuotesFrom =
+      staleClose && portfolio.lastTick !== undefined
+        ? deps.berlinStamp(new Date(portfolio.lastTick.at)).slice(11)
+        : undefined;
+    const summary = formatDailySummary(portfolio, quotes, day, {
+      staleQuotesFrom,
+      healthLine: healthLine(health),
+    });
     deps.appendJournal("Tagesabschluss", summary);
     await deps.send(summary);
   }

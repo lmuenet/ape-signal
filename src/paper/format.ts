@@ -132,16 +132,23 @@ export function formatManagerNote(
 }
 
 /** The after-close Telegram daily summary. */
-export function formatDailySummary(p: Portfolio, quotes: QuoteMap, day: string): string {
+export function formatDailySummary(
+  p: Portfolio,
+  quotes: QuoteMap,
+  day: string,
+  opts: { staleQuotesFrom?: string; healthLine?: string } = {},
+): string {
   const todayTrades = p.history.filter((t) => t.closedAt.startsWith(day));
   const dayPnl = todayTrades.reduce((s, t) => s + t.pnl, 0);
+  const stale = opts.staleQuotesFrom !== undefined ? ` (Kurse von ${opts.staleQuotesFrom})` : "";
   const lines = [
     `🦍 Mr Ape — Tagesabschluss ${day}`,
     "",
-    `Equity: ${usd(equity(p, quotes))} · Guthaben frei: ${usd(p.balance)}`,
+    `Equity: ${usd(equity(p, quotes))} · Guthaben frei: ${usd(p.balance)}${stale}`,
     `Heute realisiert: ${usd(dayPnl)} (${todayTrades.length} Trade${todayTrades.length === 1 ? "" : "s"})`,
     "",
     renderPortfolio(p, quotes).split("\n").slice(2).join("\n"),
   ];
+  if (opts.healthLine !== undefined) lines.push("", opts.healthLine);
   return lines.join("\n");
 }
