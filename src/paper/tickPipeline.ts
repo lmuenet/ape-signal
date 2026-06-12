@@ -165,6 +165,11 @@ export async function runTick(opts: TickOptions, deps: TickDeps): Promise<void> 
     } catch (err) {
       // Stops stay where they are — the deterministic engine keeps protecting.
       console.error(`[tick] manager call failed, keeping current stops: ${err instanceof Error ? err.message : String(err)}`);
+      try {
+        await deps.send("⚠️ Mr Ape nicht erreichbar (Manager-Call fehlgeschlagen) — Stops bleiben unverändert.");
+      } catch (sendErr) {
+        console.error(`[tick] failed to send manager-failure alert: ${sendErr instanceof Error ? sendErr.message : String(sendErr)}`);
+      }
     }
   }
 

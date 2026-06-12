@@ -250,6 +250,14 @@ describe("quote-failure hardening (Lebenszeichen spec)", () => {
     expect(healthSaves).toHaveLength(0);
   });
 
+  it("alerts immediately when the manager call fails (stops stay)", async () => {
+    const p: Portfolio = { ...freshPortfolio(900), orders: [order()] };
+    const { deps, sent } = makeDeps(p, { TSLA: { close: 200, changePct: 0, high: 201, low: 199 } });
+    (deps.claudeRunner as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("boom"));
+    await runTick({ isClose: false }, deps);
+    expect(sent.some((m) => m.includes("⚠️ Mr Ape nicht erreichbar"))).toBe(true);
+  });
+
   it("a saveHealth failure never breaks the tick", async () => {
     const p: Portfolio = {
       ...freshPortfolio(800),
