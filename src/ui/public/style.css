@@ -15,3 +15,9 @@ main { max-width: 1100px; margin: 0 auto; padding: 16px 24px 64px; }
 #journal article { border-top: 1px solid var(--line); padding: 10px 0; }
 #journal h3 { font-size: 14px; margin: 0 0 6px; color: var(--dim); }
 #journal pre { white-space: pre-wrap; font: inherit; margin: 0; }
+.bullbear { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 8px; font-size: 14px; }
+#kuer select { background: var(--card); color: var(--fg); border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; margin: 4px 0 8px; font: inherit; }
+#kuer h3 { font-size: 14px; color: var(--dim); margin: 16px 0 4px; }
+#kuer pre { white-space: pre-wrap; font: inherit; margin: 0; }
+#kuer details { margin-top: 12px; color: var(--dim); }
+#kuer details summary { cursor: pointer; }

@@ -9,6 +9,7 @@ import { formatKuer, renderPortfolio, renderQuotes } from "./format";
 import { buildDebatePrompt, buildDecisionPrompt, buildDossierPrompt } from "./prompts";
 import { parseDebate, parseDecision, parseDossier, type Debate, type Dossier } from "./decision";
 import { GUARDRAILS, type Portfolio, type QuoteMap } from "./types";
+import type { KuerArtifact } from "./kuerArtifact";
 
 export interface KuerDeps {
   loadPortfolio: () => Portfolio;
@@ -23,6 +24,8 @@ export interface KuerDeps {
   /** Opus — the decider role. */
   decideRunner: (prompt: string) => Promise<string>;
   send: (text: string) => Promise<void>;
+  /** Persist the day's Kür artifact (Kür-Ansicht spec). Failures must not break the Kür. */
+  saveKuer: (artifact: KuerArtifact) => void;
   now?: () => Date;
   berlinDay: (d: Date) => string;
 }
@@ -48,6 +51,14 @@ function renderDebate(debate: Debate | null): string {
   return debate.debates
     .map((d) => `${d.ticker}:\n  Bull: ${d.bull}\n  Bear: ${d.bear}`)
     .join("\n");
+}
+
+function trySaveKuer(deps: KuerDeps, artifact: KuerArtifact): void {
+  try {
+    deps.saveKuer(artifact);
+  } catch (err) {
+    console.error(`[kuer] saving artifact failed: ${err instanceof Error ? err.message : String(err)}`);
+  }
 }
 
 export async function runKuer(opts: KuerOptions, deps: KuerDeps): Promise<void> {
@@ -106,6 +117,17 @@ export async function runKuer(opts: KuerOptions, deps: KuerDeps): Promise<void> 
   const decision = parseDecision(raw);
   if (!decision) {
     console.error("[kuer] unreadable decision, skipping today (no guessed trades).");
+    trySaveKuer(deps, {
+      day,
+      createdAt: now.toISOString(),
+      scanSummary: opts.scanSummary,
+      dossier,
+      debate,
+      decisionJournal: null,
+      orders: [],
+      rejected: [],
+      status: "skipped-unreadable",
+    });
     await deps.send("⚠️ Mr Ape: Kandidatenkür heute ausgefallen (Entscheidung nicht lesbar). Morgen wieder.");
     return;
   }
@@ -116,6 +138,18 @@ export async function runKuer(opts: KuerOptions, deps: KuerDeps): Promise<void> 
   });
   portfolio = updated;
   deps.savePortfolio(portfolio);
+
+  trySaveKuer(deps, {
+    day,
+    createdAt: now.toISOString(),
+    scanSummary: opts.scanSummary,
+    dossier,
+    debate,
+    decisionJournal: decision.journal,
+    orders: accepted,
+    rejected: rejected.map((r) => ({ ticker: r.decision.ticker, side: r.decision.side, reason: r.reason })),
+    status: "decided",
+  });
 
   const journalBody = [
     decision.journal.trim(),

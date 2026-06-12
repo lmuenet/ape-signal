@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { runKuer, type KuerDeps } from "./select";
 import { berlinDay } from "./store";
 import { freshPortfolio, type Portfolio, type QuoteMap } from "./types";
+import type { KuerArtifact } from "./kuerArtifact";
 
 const NOW = new Date("2026-06-09T13:15:00Z"); // 15:15 Berlin
 const DAY = "2026-06-09";
@@ -26,6 +27,7 @@ function makeDeps(p: Portfolio, quotes: QuoteMap, over: Partial<KuerDeps> = {}) 
   const saved: Portfolio[] = [];
   const journal: Array<[string, string]> = [];
   const sent: string[] = [];
+  const kuerSaves: KuerArtifact[] = [];
   const deps: KuerDeps = {
     loadPortfolio: () => p,
     savePortfolio: (x) => saved.push(x),
@@ -38,11 +40,12 @@ function makeDeps(p: Portfolio, quotes: QuoteMap, over: Partial<KuerDeps> = {}) 
     send: vi.fn(async (t: string) => {
       sent.push(t);
     }),
+    saveKuer: (a) => kuerSaves.push(a),
     now: () => NOW,
     berlinDay,
     ...over,
   };
-  return { deps, saved, journal, sent };
+  return { deps, saved, journal, sent, kuerSaves };
 }
 
 const quotes: QuoteMap = { NVDA: { close: 100, changePct: 1, high: 101, low: 99 } };
@@ -140,5 +143,81 @@ describe("runKuer", () => {
     expect(saved.at(-1)?.orders).toHaveLength(0);
     expect(journal[0][1]).toContain("Nichts überzeugt");
     expect(sent[0]).toContain("keine neuen Trades");
+  });
+});
+
+describe("Kür artifact persistence (Kür-Ansicht spec)", () => {
+  it("saves a decided artifact with dossier, debate, journal, orders and scan summary", async () => {
+    const { deps, kuerSaves } = makeDeps(freshPortfolio(1000), quotes);
+    await runKuer({ scanSummary: "NVDA: signal" }, deps);
+    const a = kuerSaves.at(-1)!;
+    expect(a.status).toBe("decided");
+    expect(a.day).toBe(DAY);
+    expect(a.scanSummary).toBe("NVDA: signal");
+    expect(a.dossier?.candidates[0]?.ticker).toBe("NVDA");
+    expect(a.debate?.debates[0]?.bear).toContain("überkauft");
+    expect(a.decisionJournal).toContain("NVDA long");
+    expect(a.orders).toHaveLength(1);
+    expect(a.orders[0]?.ticker).toBe("NVDA");
+  });
+
+  it("records rejected trades with reason", async () => {
+    const { deps, kuerSaves } = makeDeps(freshPortfolio(1000), quotes, {
+      decideRunner: vi.fn(async () =>
+        JSON.stringify({
+          trades: [{ ticker: "XXXX", side: "long", stake: 100, leverage: 1, entry: "market", stopLoss: 1, thesis: "" }],
+          journal: "Versuch.",
+        }),
+      ),
+    });
+    await runKuer({ scanSummary: "" }, deps);
+    const a = kuerSaves.at(-1)!;
+    expect(a.orders).toHaveLength(0);
+    expect(a.rejected[0]?.ticker).toBe("XXXX");
+    expect(a.rejected[0]?.reason).toContain("kein Kurs");
+  });
+
+  it("saves a skipped-unreadable artifact that still archives dossier and debate", async () => {
+    const { deps, kuerSaves } = makeDeps(freshPortfolio(1000), quotes, {
+      decideRunner: vi.fn(async () => "kein JSON heute"),
+    });
+    await runKuer({ scanSummary: "NVDA: signal" }, deps);
+    const a = kuerSaves.at(-1)!;
+    expect(a.status).toBe("skipped-unreadable");
+    expect(a.decisionJournal).toBeNull();
+    expect(a.orders).toEqual([]);
+    expect(a.dossier?.candidates).toHaveLength(1);
+  });
+
+  it("saves no artifact when the daily budget is already used (skip before research)", async () => {
+    const p: Portfolio = {
+      ...freshPortfolio(400),
+      orders: [1, 2, 3].map((i) => ({
+        id: `X-${DAY}-${i}`,
+        ticker: "X",
+        side: "long" as const,
+        stake: 100,
+        leverage: 1,
+        entryType: "market" as const,
+        stopLoss: 1,
+        thesis: "",
+        createdAt: NOW.toISOString(),
+        day: DAY,
+      })),
+    };
+    const { deps, kuerSaves } = makeDeps(p, quotes);
+    await runKuer({ scanSummary: "" }, deps);
+    expect(kuerSaves).toHaveLength(0);
+  });
+
+  it("a saveKuer failure never breaks the Kür (post still goes out)", async () => {
+    const { deps, sent, saved } = makeDeps(freshPortfolio(1000), quotes, {
+      saveKuer: () => {
+        throw new Error("disk full");
+      },
+    });
+    await runKuer({ scanSummary: "" }, deps);
+    expect(saved.at(-1)?.orders).toHaveLength(1);
+    expect(sent[0]).toContain("Kandidatenkür");
   });
 });

@@ -69,6 +69,52 @@ function renderJournal(md) {
     .join("");
 }
 
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+
+function renderKuerArtifact(a) {
+  const debates = a.debate?.debates ?? [];
+  const cards = (a.dossier?.candidates ?? []).map((c) => {
+    const d = debates.find((x) => x.ticker === c.ticker);
+    return `<div class="card">
+      <b>${esc(c.ticker)}</b> — ${esc(c.angle)}
+      <div class="meta">Katalysator: ${esc(c.catalyst)} · Sentiment: ${esc(c.sentiment)}</div>
+      ${d ? `<div class="bullbear"><div><b class="pnl-pos">Bull</b><br>${esc(d.bull)}</div><div><b class="pnl-neg">Bear</b><br>${esc(d.bear)}</div></div>` : ""}
+    </div>`;
+  });
+  const orders = a.orders.map(
+    (o) => `<div class="card"><b>${esc(o.ticker)}</b> ${o.side} ${o.leverage}x — Einsatz ${usd(o.stake)},
+      ${o.entryType === "market" ? "Market" : `Limit ${o.limitPrice}`}, SL ${o.stopLoss}${o.takeProfit ? `, TP ${o.takeProfit}` : ""}
+      <div class="meta">${esc(o.thesis)}</div></div>`,
+  );
+  const rejected = a.rejected.map((r) => `<div class="meta">✗ ${esc(r.ticker)} ${r.side} — ${esc(r.reason)}</div>`);
+  return [
+    a.dossier ? "" : '<p class="empty">Research fehlgeschlagen — entschieden auf Scan-Basis.</p>',
+    cards.join(""),
+    a.dossier && !a.debate ? '<p class="empty">Keine Debatte verfügbar.</p>' : "",
+    a.status === "skipped-unreadable"
+      ? '<p class="empty">Entscheidung unlesbar — keine Trades an diesem Tag.</p>'
+      : `<article><h3>Mr Apes Begründung</h3><pre>${esc(a.decisionJournal ?? "")}</pre></article>`,
+    orders.length ? `<h3>Platzierte Orders</h3>${orders.join("")}` : a.status === "decided" ? '<p class="empty">Keine Orders platziert.</p>' : "",
+    rejected.length ? `<h3>Abgelehnt</h3>${rejected.join("")}` : "",
+    a.scanSummary ? `<details><summary>Scan-Kontext</summary><pre>${esc(a.scanSummary)}</pre></details>` : "",
+  ].join("");
+}
+
+async function showKuerDay(day) {
+  $("#kuer-detail").innerHTML = renderKuerArtifact(await api(`/api/kuer?day=${day}`));
+}
+
+async function renderKuerSection() {
+  const days = await api("/api/kuer/days");
+  if (days.length === 0) {
+    $("#kuer").innerHTML = '<span class="empty">Noch keine Kür-Artefakte — entstehen ab der nächsten Kandidatenkür.</span>';
+    return;
+  }
+  $("#kuer").innerHTML = `<select id="kuer-day">${days.map((d) => `<option>${d}</option>`).join("")}</select><div id="kuer-detail"></div>`;
+  $("#kuer-day").onchange = (e) => showKuerDay(e.target.value).catch(console.error);
+  await showKuerDay(days[0]);
+}
+
 async function load() {
   const state = await api("/api/state");
   const { portfolio } = state;
@@ -108,6 +154,10 @@ async function load() {
   }
 
   renderJournal(await api("/api/journal", true));
+
+  renderKuerSection().catch((err) => {
+    $("#kuer").innerHTML = `<span class="empty">Kür-Ansicht nicht ladbar: ${esc(err.message)}</span>`;
+  });
 }
 
 load().catch((err) => { $("#headline").textContent = `Fehler: ${err.message}`; });
