@@ -8,6 +8,7 @@ import { createClaudeRunner } from "../claude/invoke";
 import { fetchTickQuotes } from "./quotes";
 import { appendTickHistory } from "./tickHistory";
 import { appendJournal, berlinDay, berlinStamp, dataDir, loadPortfolio, readJournalTail, savePortfolio } from "./store";
+import { loadHealth, saveHealth } from "./health";
 import { runTick } from "./tickPipeline";
 
 const LABEL = process.argv[2] ?? "Tick";
@@ -31,6 +32,8 @@ async function main(): Promise<void> {
       readJournalTail: () => readJournalTail(dir),
       fetchQuotes: (tickers) => fetchTickQuotes(tickers, fetch),
       recordTick: (day, atIso, quotes) => appendTickHistory(dir, day, atIso, quotes),
+      loadHealth: (day) => loadHealth(dir, day),
+      saveHealth: (h) => saveHealth(dir, h),
       claudeRunner: createClaudeRunner({ model: "sonnet" }),
       send: (text) => telegram.sendMessage(text),
       berlinDay,
