@@ -15,6 +15,7 @@ import {
 } from "./format";
 import { buildTickPrompt } from "./prompts";
 import { parseTickResponse } from "./decision";
+import { healthLine, recordQuoteFailure, recordQuoteSuccess, type HealthState } from "./health";
 import { WAKE, type Portfolio, type QuoteMap, type TickEvent } from "./types";
 
 export interface TickDeps {
@@ -25,6 +26,10 @@ export interface TickDeps {
   fetchQuotes: (tickers: string[]) => Promise<QuoteMap>;
   /** Persist this tick's quotes into the tick history (ADR 0004). Optional in tests. */
   recordTick?: (day: string, atIso: string, quotes: QuoteMap) => void;
+  /** Operational health for `day` (Lebenszeichen spec): stats + failure counters. */
+  loadHealth: (day: string) => HealthState;
+  /** Persist health. Failures are caught by the pipeline (never break a tick). */
+  saveHealth: (h: HealthState) => void;
   /** Sonnet runner (the manager role). */
   claudeRunner: (prompt: string) => Promise<string>;
   send: (text: string) => Promise<void>;
@@ -39,6 +44,14 @@ export interface TickOptions {
 
 function describeBreach(b: WakeBreach): string {
   return `⚡ ${b.ticker}: Kurs ${b.price} riss Wake-Band ${b.side === "above" ? "oben" : "unten"} (${b.level})`;
+}
+
+function trySaveHealth(deps: TickDeps, h: HealthState): void {
+  try {
+    deps.saveHealth(h);
+  } catch (err) {
+    console.error(`[tick] saving health failed: ${err instanceof Error ? err.message : String(err)}`);
+  }
 }
 
 export async function runTick(opts: TickOptions, deps: TickDeps): Promise<void> {
@@ -58,20 +71,38 @@ export async function runTick(opts: TickOptions, deps: TickDeps): Promise<void> 
     return;
   }
 
+  let health = deps.loadHealth(day);
   let quotes: QuoteMap = {};
+  // The close tick must never skip (it is the daily lifesign): on a fetch
+  // failure it falls back to the last known quotes for VALUATION ONLY.
+  let staleClose = false;
   if (tickers.length > 0) {
     try {
       quotes = await deps.fetchQuotes(tickers);
     } catch (err) {
-      // No quotes → no evidence → skipping the whole tick is the safe move
+      console.error(`[tick] quote fetch failed: ${err instanceof Error ? err.message : String(err)}`);
+      const failed = recordQuoteFailure(health);
+      health = failed.health;
+      trySaveHealth(deps, health);
+      if (failed.alert) {
+        await deps.send(`⚠️ Monitor blind: ${health.consecutiveQuoteFailures} Ticks ohne Kurse — Stops werden nicht geprüft.`);
+      }
+      // No quotes → no evidence → skipping the monitor tick is the safe move
       // (state untouched; the next tick's day-extreme rule catches up).
-      console.error(`[tick] quote fetch failed, skipping tick: ${err instanceof Error ? err.message : String(err)}`);
-      return;
+      if (!opts.isClose) return;
+      staleClose = true;
+      quotes = portfolio.lastTick?.quotes ?? {};
     }
-    try {
-      deps.recordTick?.(day, now.toISOString(), quotes);
-    } catch (err) {
-      console.error(`[tick] recording tick history failed (charts lose one point): ${err instanceof Error ? err.message : String(err)}`);
+    if (!staleClose) {
+      const ok = recordQuoteSuccess(health);
+      health = ok.health;
+      trySaveHealth(deps, health);
+      if (ok.allClear) await deps.send("✅ Monitor wieder ok — Kurse kommen wieder durch.");
+      try {
+        deps.recordTick?.(day, now.toISOString(), quotes);
+      } catch (err) {
+        console.error(`[tick] recording tick history failed (charts lose one point): ${err instanceof Error ? err.message : String(err)}`);
+      }
     }
   }
 

@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { runTick, type TickDeps } from "./tickPipeline";
 import { berlinDay, berlinStamp } from "./store";
+import { freshHealth, type HealthState } from "./health";
 import { freshPortfolio, type EntryOrder, type Portfolio, type Position, type QuoteMap } from "./types";
 
 const NOW = new Date("2026-06-09T14:00:00Z"); // 16:00 Berlin, US session
@@ -41,6 +42,7 @@ function makeDeps(p: Portfolio, quotes: QuoteMap, claudeRaw = '{"adjustments": [
   const saved: Portfolio[] = [];
   const journal: Array<[string, string]> = [];
   const sent: string[] = [];
+  const healthSaves: HealthState[] = [];
   const deps: TickDeps = {
     loadPortfolio: () => p,
     savePortfolio: (x) => saved.push(x),
@@ -51,11 +53,13 @@ function makeDeps(p: Portfolio, quotes: QuoteMap, claudeRaw = '{"adjustments": [
     send: vi.fn(async (t: string) => {
       sent.push(t);
     }),
+    loadHealth: (day) => healthSaves.at(-1) ?? freshHealth(day),
+    saveHealth: (h) => healthSaves.push(h),
     now: () => NOW,
     berlinDay,
     berlinStamp,
   };
-  return { deps, saved, journal, sent };
+  return { deps, saved, journal, sent, healthSaves };
 }
 
 describe("runTick", () => {
@@ -208,6 +212,56 @@ describe("monitor/manager split (ADR 0003)", () => {
     await runTick({ isClose: true }, deps);
     expect(deps.claudeRunner).toHaveBeenCalledTimes(1);
     expect(sent.some((m) => m.includes("Tagesabschluss"))).toBe(true);
+  });
+});
+
+describe("quote-failure hardening (Lebenszeichen spec)", () => {
+  function failingDeps() {
+    const p: Portfolio = { ...freshPortfolio(800), positions: [position()] };
+    const made = makeDeps(p, {});
+    (made.deps.fetchQuotes as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("429"));
+    return made;
+  }
+
+  it("stays silent on the first two failures, alerts exactly on the third, not on the fourth", async () => {
+    const { deps, sent } = failingDeps();
+    await runTick({ isClose: false }, deps);
+    await runTick({ isClose: false }, deps);
+    expect(sent).toEqual([]);
+    await runTick({ isClose: false }, deps);
+    expect(sent).toEqual(["⚠️ Monitor blind: 3 Ticks ohne Kurse — Stops werden nicht geprüft."]);
+    await runTick({ isClose: false }, deps);
+    expect(sent).toHaveLength(1); // one-shot: no repeat
+  });
+
+  it("sends the all-clear on the first successful tick after an active alert", async () => {
+    const { deps, sent } = failingDeps();
+    for (let i = 0; i < 3; i++) await runTick({ isClose: false }, deps);
+    (deps.fetchQuotes as ReturnType<typeof vi.fn>).mockResolvedValue({
+      NVDA: { close: 110, changePct: 1, high: 111, low: 99 },
+    });
+    await runTick({ isClose: false }, deps);
+    expect(sent.some((m) => m.includes("✅ Monitor wieder ok"))).toBe(true);
+  });
+
+  it("counts only quote-fetching ticks (no-op ticks never touch health)", async () => {
+    const { deps, healthSaves } = makeDeps(freshPortfolio(1000), {});
+    await runTick({ isClose: false }, deps); // empty depot → early return
+    expect(healthSaves).toHaveLength(0);
+  });
+
+  it("a saveHealth failure never breaks the tick", async () => {
+    const p: Portfolio = {
+      ...freshPortfolio(800),
+      positions: [position({ wakeAbove: 120, wakeBelow: 90 })],
+      lastTick: { at: "x", day: "2026-06-09", quotes: { NVDA: { close: 108, changePct: 0, high: 109, low: 99 } } },
+    };
+    const { deps, saved } = makeDeps(p, { NVDA: { close: 110, changePct: 1, high: 111, low: 99 } });
+    deps.saveHealth = () => {
+      throw new Error("disk full");
+    };
+    await runTick({ isClose: false }, deps);
+    expect(saved.length).toBeGreaterThan(0); // portfolio still saved
   });
 });
 
