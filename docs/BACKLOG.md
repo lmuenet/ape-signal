@@ -22,3 +22,15 @@ unter `docs/plans/`.
 - **Mr-Ape-Chat im Depot-UI anzeigen**: den /journal-Dialog (Fragen + Antworten)
   read-only im UI sichtbar machen. Voraussetzung: der Listener persistiert den
   Dialog (heute nur flüchtig in Telegram). Schreiben aus dem UI wäre Stufe 2+.
+- **Stille Degradation härten (Lebenszeichen)**: Wiederholte Quote-Fetch-Fehler
+  überspringen heute jeden Tick still (`tickPipeline.ts`) — von außen nicht von
+  einem ruhigen Markt unterscheidbar, und Stops würden nicht mehr geprüft. Nach
+  N Fehlschlägen in Folge soll ein Telegram-Alert kommen; dito für wiederholt
+  fehlschlagende Manager-Calls. Befund aus der Tick-Analyse vom 2026-06-12.
+- **Language-Setting**: Sprache der Persona-Ausgaben (Journal, Telegram,
+  Tagesabschluss) konfigurierbar machen statt fest Deutsch — Baustein für den
+  Public-Self-Host-Pfad.
+- **Handelsfenster-Setting**: Konfigurierbar, in welchem Fenster Mr Ape agiert
+  (heute fest US-Session 15:30–22:00 Europe/Berlin in Timern und Glossar) —
+  z.B. Xetra-Handel oder andere Sessions. Betrifft Timer, Fill-Fenster-Logik
+  und den Tagesabschluss-Zeitpunkt.
