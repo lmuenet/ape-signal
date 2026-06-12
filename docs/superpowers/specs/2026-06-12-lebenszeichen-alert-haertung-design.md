@@ -87,6 +87,14 @@ Neu beim Close-Tick mit Fetch-Fehler:
   Band-Checks (die wurden zu ihrem Tick bereits verarbeitet). Der Monitor-Pfad
   wird übersprungen.
 - Zeitbasierte Pflichten laufen trotzdem: Day-Order-Expiry und das Summary.
+  Die Expiry läuft als eigene Engine-Funktion (`expireDayOrders`), nicht über
+  `applyTick` — mit stalen Kursen würde dessen `firstTick`-Evidenzregel sonst
+  Fills/Stops aus alten Tages-Extremen auslösen, und `lastTick` würde als
+  Beweis-Baseline mit altem Stand überschrieben.
+- Auch der garantierte Manager-Call beim Close entfällt im Stale-Fall: ein
+  `close_position` von Mr Ape würde zu stalen Kursen ausgeführt — genau die
+  Art Fill, die stale Kurse nie treiben dürfen. Der Alert (Punkt 2) hat die
+  Störung zu diesem Zeitpunkt bereits gemeldet.
 
 Jeder Tagesabschluss bekommt eine Gesundheitszeile aus `health.json`:
 
