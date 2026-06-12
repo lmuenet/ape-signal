@@ -237,6 +237,26 @@ export function applyTick(p: Portfolio, quotes: QuoteMap, opts: TickOptions): Ti
   };
 }
 
+/**
+ * Expire due day orders WITHOUT processing quotes — for the stale-close path
+ * (Lebenszeichen spec): when the closing tick has no fresh quotes, fills,
+ * stops and band checks must not run, but the time-based expiry still must.
+ * lastTick (the fill-evidence baseline) is deliberately left untouched.
+ */
+export function expireDayOrders(p: Portfolio, day: string): TickOutcome {
+  const events: TickEvent[] = [];
+  let balance = p.balance;
+  const orders = p.orders.filter((order) => {
+    if (order.day <= day) {
+      balance += order.stake; // release the reserved margin
+      events.push({ kind: "order-expired", order });
+      return false;
+    }
+    return true;
+  });
+  return { portfolio: { ...p, balance, orders }, events };
+}
+
 /** True if `a` is a worse exit than `b` for the given side (lower for longs). */
 function isWorse(a: number, b: number, side: Side): boolean {
   return side === "long" ? a < b : a > b;
