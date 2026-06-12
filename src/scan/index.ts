@@ -10,6 +10,7 @@ import { crawlReddit, type RedditCandidate } from "../reddit/crawl";
 import { fetchEarningsToday } from "./earnings";
 import { createClaudeRunner } from "../claude/invoke";
 import { runKuer } from "../paper/select";
+import { saveKuerArtifact } from "../paper/kuerArtifact";
 import { fetchTickQuotes } from "../paper/quotes";
 import {
   appendJournal,
@@ -97,6 +98,7 @@ async function main(): Promise<void> {
         debateRunner: createClaudeRunner({ model: "sonnet" }),
         decideRunner: createClaudeRunner({ model: "opus" }),
         send: (text) => telegram.sendMessage(text),
+        saveKuer: (a) => saveKuerArtifact(dir, a),
         berlinDay,
       },
     );
