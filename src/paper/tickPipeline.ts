@@ -3,7 +3,7 @@
 // only by a hard event, a breached wake band (cooldown-limited) or the close.
 // Telegram hears events, the bundled manager note and the daily summary;
 // silent monitor ticks post nothing.
-import { applyAdjustments, applyTick } from "./engine";
+import { applyAdjustments, applyTick, expireDayOrders } from "./engine";
 import { checkWakeBands, consumeBands, ensureBands, type WakeBreach } from "./wake";
 import {
   describeAdjustment,
@@ -107,15 +107,25 @@ export async function runTick(opts: TickOptions, deps: TickDeps): Promise<void> 
   }
 
   // --- Monitor path: deterministic engine + wake-band check. ---
-  const { portfolio: afterFills, events } = applyTick(portfolio, quotes, {
-    now: now.toISOString(),
-    day,
-    isClose: opts.isClose,
-  });
-  portfolio = afterFills;
-
-  const breaches = checkWakeBands(portfolio.positions, quotes);
-  if (breaches.length > 0) portfolio = consumeBands(portfolio, breaches);
+  // Stale quotes never drive fills, stops or band checks (they are the
+  // evidence baseline itself); only the time-based expiry still runs.
+  let events: TickEvent[];
+  let breaches: WakeBreach[] = [];
+  if (staleClose) {
+    const expired = expireDayOrders(portfolio, day);
+    portfolio = expired.portfolio;
+    events = expired.events;
+  } else {
+    const afterTick = applyTick(portfolio, quotes, {
+      now: now.toISOString(),
+      day,
+      isClose: opts.isClose,
+    });
+    portfolio = afterTick.portfolio;
+    events = afterTick.events;
+    breaches = checkWakeBands(portfolio.positions, quotes);
+    if (breaches.length > 0) portfolio = consumeBands(portfolio, breaches);
+  }
   deps.savePortfolio(portfolio);
 
   if (events.length > 0) {
@@ -129,7 +139,10 @@ export async function runTick(opts: TickOptions, deps: TickDeps): Promise<void> 
   const cooldownOver =
     portfolio.lastManagerCallAt === undefined ||
     now.getTime() - Date.parse(portfolio.lastManagerCallAt) >= WAKE.cooldownMinutes * 60_000;
-  const wake = hasOpen && (events.length > 0 || opts.isClose || (breaches.length > 0 && cooldownOver));
+  // A stale close never wakes the manager: a close_position adjustment would
+  // execute at stale quotes — exactly the kind of fill stale quotes must not drive.
+  const wake =
+    !staleClose && hasOpen && (events.length > 0 || opts.isClose || (breaches.length > 0 && cooldownOver));
 
   if (wake) {
     try {
@@ -174,14 +187,23 @@ export async function runTick(opts: TickOptions, deps: TickDeps): Promise<void> 
   }
 
   // --- Fallback bands: every quoted position always carries a band. ---
-  const ensured = ensureBands(portfolio, quotes);
-  if (ensured.changed) {
-    portfolio = ensured.portfolio;
-    deps.savePortfolio(portfolio);
+  if (!staleClose) {
+    const ensured = ensureBands(portfolio, quotes);
+    if (ensured.changed) {
+      portfolio = ensured.portfolio;
+      deps.savePortfolio(portfolio);
+    }
   }
 
   if (opts.isClose && hadActivity) {
-    const summary = formatDailySummary(portfolio, quotes, day);
+    const staleQuotesFrom =
+      staleClose && portfolio.lastTick !== undefined
+        ? deps.berlinStamp(new Date(portfolio.lastTick.at)).slice(11)
+        : undefined;
+    const summary = formatDailySummary(portfolio, quotes, day, {
+      staleQuotesFrom,
+      healthLine: healthLine(health),
+    });
     deps.appendJournal("Tagesabschluss", summary);
     await deps.send(summary);
   }

@@ -273,6 +273,50 @@ describe("quote-failure hardening (Lebenszeichen spec)", () => {
   });
 });
 
+describe("unconditional close (stale quotes, Lebenszeichen spec)", () => {
+  const realLastTick = {
+    at: "2026-06-09T13:30:00.000Z", // 15:30 Berlin
+    day: "2026-06-09",
+    quotes: { NVDA: { close: 108, changePct: 0, high: 109, low: 99 } },
+  };
+
+  function staleCloseDeps(extra: Partial<Portfolio> = {}) {
+    const p: Portfolio = { ...freshPortfolio(800), positions: [position()], lastTick: realLastTick, ...extra };
+    const made = makeDeps(p, {});
+    (made.deps.fetchQuotes as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("429"));
+    return made;
+  }
+
+  it("still posts the daily summary with stale marker and health line", async () => {
+    const { deps, sent } = staleCloseDeps();
+    await runTick({ isClose: true }, deps);
+    const summary = sent.find((m) => m.includes("Tagesabschluss"));
+    expect(summary).toBeDefined();
+    expect(summary).toContain("(Kurse von 15:30)");
+    expect(summary).toContain("Monitor:");
+  });
+
+  it("expires day orders but never fills, never calls the manager, never touches lastTick", async () => {
+    const { deps, saved, sent } = staleCloseDeps({
+      orders: [order({ entryType: "market" })], // would fill instantly with ANY quote
+    });
+    await runTick({ isClose: true }, deps);
+    const final = saved.at(-1)!;
+    expect(final.orders).toHaveLength(0); // expired
+    expect(final.positions).toHaveLength(1); // NOT filled into a second position
+    expect(final.balance).toBe(900); // stake released
+    expect(final.lastTick).toEqual(realLastTick); // evidence baseline untouched
+    expect(deps.claudeRunner).not.toHaveBeenCalled();
+    expect(sent.some((m) => m.includes("Order verfallen"))).toBe(true);
+  });
+
+  it("does not derive new bands from stale quotes", async () => {
+    const { deps, saved } = staleCloseDeps(); // position() has no bands
+    await runTick({ isClose: true }, deps);
+    expect(saved.at(-1)!.positions[0]?.wakeAbove).toBeUndefined();
+  });
+});
+
 describe("tick history recording (ADR 0004)", () => {
   it("records the tick into the history when quotes were fetched", async () => {
     const recorded: Array<{ day: string; at: string }> = [];
