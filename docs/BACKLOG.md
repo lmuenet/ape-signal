@@ -3,6 +3,9 @@
 Lose Ideen, noch nicht geplant. Wenn ein Punkt konkret wird → eigener Plan
 unter `docs/plans/`.
 
+Erledigt am 2026-06-12: „Stille Degradation härten (Lebenszeichen)" und
+„Kür-Ansicht im Depot-UI" — Specs und Pläne unter `docs/superpowers/`.
+
 - **Proxy für Crawling**: Residential/rotierender Proxy, damit der VPS auch
   Quellen erreicht, die Datacenter-IPs blocken (Yahoo-Chart-API, StockTwits —
   siehe ADR 0001). Würde den designierten Nachrüstpfad für Candle-Genauigkeit
@@ -16,17 +19,9 @@ unter `docs/plans/`.
 - **TradingView-Embed-Widget als Kontext-Chart**: ergänzend zum eigenen
   Positions-Chart volle Markthistorie pro Ticker im Depot-UI (ADR 0004,
   Alternativen).
-- **Kür-Ansicht im Depot-UI**: Dossier, Bull/Bear-Debatte und Entscheidung
-  eines Tages nachvollziehbar darstellen (setzt voraus, dass die Kür ihre
-  Artefakte strukturiert ablegt, nicht nur als Journal-Prosa).
 - **Mr-Ape-Chat im Depot-UI anzeigen**: den /journal-Dialog (Fragen + Antworten)
   read-only im UI sichtbar machen. Voraussetzung: der Listener persistiert den
   Dialog (heute nur flüchtig in Telegram). Schreiben aus dem UI wäre Stufe 2+.
-- **Stille Degradation härten (Lebenszeichen)**: Wiederholte Quote-Fetch-Fehler
-  überspringen heute jeden Tick still (`tickPipeline.ts`) — von außen nicht von
-  einem ruhigen Markt unterscheidbar, und Stops würden nicht mehr geprüft. Nach
-  N Fehlschlägen in Folge soll ein Telegram-Alert kommen; dito für wiederholt
-  fehlschlagende Manager-Calls. Befund aus der Tick-Analyse vom 2026-06-12.
 - **Language-Setting**: Sprache der Persona-Ausgaben (Journal, Telegram,
   Tagesabschluss) konfigurierbar machen statt fest Deutsch — Baustein für den
   Public-Self-Host-Pfad.
