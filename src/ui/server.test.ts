@@ -37,6 +37,21 @@ function fixture(): void {
     join(dir, "ticks", "2026-06-11.ndjson"),
     JSON.stringify({ at: "2026-06-11T15:35:00.000Z", quotes: { AAPL: { close: 105, changePct: 1, high: 106, low: 99 } } }) + "\n",
   );
+  mkdirSync(join(dir, "kuer"));
+  writeFileSync(
+    join(dir, "kuer", "2026-06-11.json"),
+    JSON.stringify({
+      day: "2026-06-11",
+      createdAt: "2026-06-11T13:25:00.000Z",
+      scanSummary: "AAPL: signal",
+      dossier: { candidates: [{ ticker: "AAPL", angle: "Momentum", catalyst: "Earnings", sentiment: "bullish" }], marketContext: "" },
+      debate: { debates: [{ ticker: "AAPL", bull: "stark", bear: "teuer" }] },
+      decisionJournal: "AAPL long.",
+      orders: [],
+      rejected: [],
+      status: "decided",
+    }),
+  );
 }
 
 afterEach(() => {
@@ -94,5 +109,32 @@ describe("ui server", () => {
     const base = await start();
     expect((await fetch(`${base}/api/nope`, { headers: AUTH })).status).toBe(404);
     expect((await fetch(`${base}/..%2f..%2fetc%2fpasswd`, { headers: AUTH })).status).toBe(404);
+  });
+});
+
+describe("kuer routes (Kür-Ansicht spec)", () => {
+  it("lists kuer days newest first", async () => {
+    fixture();
+    const base = await start();
+    const res = await fetch(`${base}/api/kuer/days`, { headers: AUTH });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual(["2026-06-11"]);
+  });
+
+  it("serves the artifact for a day", async () => {
+    fixture();
+    const base = await start();
+    const res = await fetch(`${base}/api/kuer?day=2026-06-11`, { headers: AUTH });
+    expect(res.status).toBe(200);
+    const a = await res.json();
+    expect(a.decisionJournal).toBe("AAPL long.");
+    expect(a.dossier.candidates[0].ticker).toBe("AAPL");
+  });
+
+  it("400s a malformed day and 404s a missing one", async () => {
+    fixture();
+    const base = await start();
+    expect((await fetch(`${base}/api/kuer?day=..%2Fjournal`, { headers: AUTH })).status).toBe(400);
+    expect((await fetch(`${base}/api/kuer?day=2026-01-01`, { headers: AUTH })).status).toBe(404);
   });
 });

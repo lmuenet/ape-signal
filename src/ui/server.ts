@@ -10,6 +10,7 @@ import { timingSafeEqual } from "node:crypto";
 import { equity } from "../paper/engine";
 import { loadPortfolio } from "../paper/store";
 import { readTickSeries } from "../paper/tickHistory";
+import { listKuerDays, loadKuerArtifact } from "../paper/kuerArtifact";
 import { equitySeries } from "./series";
 
 export interface UiServerOptions {
@@ -96,6 +97,24 @@ export function createUiServer(opts: UiServerOptions): Server {
       if (path === "/api/equity") {
         const portfolio = loadPortfolio(opts.dir, opts.startBalance);
         sendJson(res, equitySeries(portfolio, opts.startBalance));
+        return;
+      }
+      if (path === "/api/kuer/days") {
+        sendJson(res, listKuerDays(opts.dir));
+        return;
+      }
+      if (path === "/api/kuer") {
+        const day = url.searchParams.get("day") ?? "";
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) {
+          res.writeHead(400).end("bad day");
+          return;
+        }
+        const artifact = loadKuerArtifact(opts.dir, day);
+        if (!artifact) {
+          res.writeHead(404).end("no kuer for that day");
+          return;
+        }
+        sendJson(res, artifact);
         return;
       }
 
