@@ -85,6 +85,8 @@ export interface Portfolio {
   lastTick?: { at: string; day: string; quotes: QuoteMap };
   /** Last manager (Sonnet) call — cooldown baseline for band wakes. */
   lastManagerCallAt?: string;
+  /** Last monitor tick that actually ran — baseline for the interval throttle (A2). */
+  lastTickAt?: string;
 }
 
 /** Balanced-mode guardrails — enforced by the engine, not by Mr Ape. */
