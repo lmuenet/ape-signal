@@ -25,3 +25,6 @@ Thumbs.db
 # Claude Code — lokal, nicht teilen
 .claude/
 CLAUDE.md
+
+# Brainstorming visual companion (lokal, nicht einchecken)
+.superpowers/
