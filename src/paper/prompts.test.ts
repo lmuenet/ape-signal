@@ -34,3 +34,47 @@ describe("buildDecisionPrompt", () => {
     expect(p).toContain("Wake-Up-Band");
   });
 });
+
+import { buildAdminPrompt, buildDossierPrompt } from "./prompts";
+
+describe("prompt language label", () => {
+  it("decision prompt defaults to a German free-text directive", () => {
+    const p = buildDecisionPrompt({
+      day: "2026-06-11", dossierBlock: "", debateBlock: "", quotesBlock: "",
+      portfolioBlock: "", journalTail: "",
+    });
+    expect(p).toContain("DEUTSCH");
+  });
+
+  it("decision prompt switches the free-text directive to English", () => {
+    const p = buildDecisionPrompt({
+      day: "2026-06-11", dossierBlock: "", debateBlock: "", quotesBlock: "",
+      portfolioBlock: "", journalTail: "", language: "en",
+    });
+    expect(p).toContain("ENGLISCH");
+    expect(p).not.toContain("auf DEUTSCH");
+    expect(p).toContain("long | short");
+  });
+
+  it("tick prompt honours the language flag", () => {
+    const base = {
+      stamp: "2026-06-11 15:35", portfolioBlock: "(d)", quotesBlock: "(q)",
+      eventsBlock: "", wakeBlock: "", journalTail: "", isClose: false,
+    };
+    expect(buildTickPrompt({ ...base, language: "en" })).toContain("ENGLISCH");
+    expect(buildTickPrompt(base)).toContain("DEUTSCH");
+  });
+
+  it("admin prompt honours the language flag and drops the hard-coded 'deutsche'", () => {
+    expect(buildAdminPrompt("setz auf 500", 100, "en")).toContain("ENGLISCH");
+    const de = buildAdminPrompt("setz auf 500", 100);
+    expect(de).toContain("DEUTSCH");
+    expect(de).not.toContain("deutsche Journal-Notiz");
+  });
+
+  it("dossier prompt honours the language flag", () => {
+    const input = { day: "2026-06-11", scanSummary: "", journalTail: "" };
+    expect(buildDossierPrompt({ ...input, language: "en" })).toContain("ENGLISCH");
+    expect(buildDossierPrompt(input)).toContain("DEUTSCH");
+  });
+});
