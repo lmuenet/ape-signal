@@ -118,7 +118,7 @@ export function buildDecisionPrompt(input: DecisionPromptInput): string {
   return [
     PERSONA,
     "",
-    `Heute ist ${input.day}, kurz vor US-Open. Du bist in der ENTSCHEIDER-Rolle:`,
+    `Heute ist ${input.day}, kurz vor Handelsstart. Du bist in der ENTSCHEIDER-Rolle:`,
     "wähle aus dem Research-Dossier bis zu 3 Trades — oder keinen, wenn nichts überzeugt.",
     "NULL Trades ist eine vollwertige Entscheidung, kein Versagen.",
     "",
@@ -181,7 +181,7 @@ export function buildTickPrompt(input: TickPromptInput): string {
   return [
     PERSONA,
     "",
-    `Tick ${input.stamp} (${input.isClose ? "LETZTER Tick des Tages, US-Close" : "US-Session läuft"}).`,
+    `Tick ${input.stamp} (${input.isClose ? "LETZTER Tick des Tages, Handelsschluss" : "Handelssession läuft"}).`,
     "Du bist in der MANAGER-Rolle: verwalte deine offenen Positionen. Du darfst Stops",
     "nachziehen, Take-Profits setzen/ändern, Positionen schließen und offene Orders",
     "streichen. Du darfst KEINE neuen Positionen eröffnen.",
