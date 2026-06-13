@@ -17,6 +17,7 @@ import { buildTickPrompt } from "./prompts";
 import { parseTickResponse } from "./decision";
 import { healthLine, recordQuoteFailure, recordQuoteSuccess, type HealthState } from "./health";
 import { WAKE, type Portfolio, type QuoteMap, type TickEvent } from "./types";
+import type { Language } from "../core/language";
 
 export interface TickDeps {
   loadPortfolio: () => Portfolio;
@@ -36,6 +37,7 @@ export interface TickDeps {
   now?: () => Date;
   berlinDay: (d: Date) => string;
   berlinStamp: (d: Date) => string;
+  language?: Language;
 }
 
 export interface TickOptions {
@@ -155,6 +157,7 @@ export async function runTick(opts: TickOptions, deps: TickDeps): Promise<void> 
           wakeBlock: breaches.map(describeBreach).join("\n"),
           journalTail: deps.readJournalTail(),
           isClose: opts.isClose,
+          language: deps.language ?? "de",
         }),
       );
       portfolio = { ...portfolio, lastManagerCallAt: now.toISOString() };

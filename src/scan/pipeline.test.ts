@@ -56,6 +56,26 @@ describe("runScan", () => {
     expect(seen).not.toContain("Kurse & Trend");
   });
 
+  it("switches the trending directive to English when language=en", async () => {
+    let seen = "";
+    await runScan(
+      { label: "T", limit: 5 },
+      {
+        fetchSnapshot: async () =>
+          new Map([["TSLA", { rank: 1, mentions: 100, mentions24hAgo: 80 }]]) as ApewisdomSnapshot,
+        claudeRunner: async (p) => {
+          seen = p;
+          return "";
+        },
+        send: async () => {},
+        language: "en",
+      },
+    );
+    expect(seen).toContain("ENGLISCH");
+    expect(seen).not.toContain("auf DEUTSCH");
+    expect(seen).toContain("signal | noise | watch");
+  });
+
   it("appends a TradingView price + trend block when fetchTrend is provided", async () => {
     let seen = "";
     await runScan(

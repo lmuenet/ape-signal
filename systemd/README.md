@@ -58,3 +58,10 @@ Notes:
 - `CLAUDE_CODE_OAUTH_TOKEN` (subscription, from `claude setup-token`) lives in
   `/etc/ape-signal.env`. It is valid ~1 year — renew around day 350. Token expiry
   is silent; the scan's Telegram failure alert is the backstop.
+- `APE_LANGUAGE` (optional, `de` | `en`, default `de`) sets the language of ALL
+  AI free text (Persona-Journal/Kür/Tick, Scan- und Strategie-Freitexte). It
+  belongs in `/etc/ape-signal.env` (read by the systemd core: scan/tick/listener)
+  — NOT in the `ape-ui` container, which is a read-only viewer and calls no LLM.
+  An unsupported value makes the affected service fail fast at startup; `npm run
+  doctor` reports the active language. JSON keys/enums stay English in every
+  language.

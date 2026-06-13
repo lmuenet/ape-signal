@@ -10,6 +10,7 @@ import { buildDebatePrompt, buildDecisionPrompt, buildDossierPrompt } from "./pr
 import { parseDebate, parseDecision, parseDossier, type Debate, type Dossier } from "./decision";
 import { GUARDRAILS, type Portfolio, type QuoteMap } from "./types";
 import type { KuerArtifact } from "./kuerArtifact";
+import type { Language } from "../core/language";
 
 export interface KuerDeps {
   loadPortfolio: () => Portfolio;
@@ -28,6 +29,7 @@ export interface KuerDeps {
   saveKuer: (artifact: KuerArtifact) => void;
   now?: () => Date;
   berlinDay: (d: Date) => string;
+  language?: Language;
 }
 
 export interface KuerOptions {
@@ -75,7 +77,7 @@ export async function runKuer(opts: KuerOptions, deps: KuerDeps): Promise<void> 
 
   let dossier: Dossier | null = null;
   try {
-    dossier = parseDossier(await deps.researchRunner(buildDossierPrompt({ day, scanSummary: opts.scanSummary, journalTail })));
+    dossier = parseDossier(await deps.researchRunner(buildDossierPrompt({ day, scanSummary: opts.scanSummary, journalTail, language: deps.language ?? "de" })));
   } catch (err) {
     console.error(`[kuer] research failed, degrading to scan-only: ${err instanceof Error ? err.message : String(err)}`);
   }
@@ -96,7 +98,7 @@ export async function runKuer(opts: KuerOptions, deps: KuerDeps): Promise<void> 
     try {
       debate = parseDebate(
         await deps.debateRunner(
-          buildDebatePrompt({ day, dossierBlock: renderDossier(dossier), quotesBlock: renderQuotes(quotes), journalTail }),
+          buildDebatePrompt({ day, dossierBlock: renderDossier(dossier), quotesBlock: renderQuotes(quotes), journalTail, language: deps.language ?? "de" }),
         ),
       );
     } catch (err) {
@@ -112,6 +114,7 @@ export async function runKuer(opts: KuerOptions, deps: KuerDeps): Promise<void> 
       quotesBlock: renderQuotes(quotes),
       portfolioBlock: renderPortfolio(portfolio, quotes),
       journalTail,
+      language: deps.language ?? "de",
     }),
   );
   const decision = parseDecision(raw);

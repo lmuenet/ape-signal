@@ -7,6 +7,7 @@ import { renderPortfolio } from "./format";
 import { buildAdminPrompt } from "./prompts";
 import { parseAdminAction } from "./decision";
 import type { Portfolio, QuoteMap } from "./types";
+import type { Language } from "../core/language";
 
 export interface JournalDeps {
   loadPortfolio: () => Portfolio;
@@ -16,6 +17,7 @@ export interface JournalDeps {
   fetchQuotes: (tickers: string[]) => Promise<QuoteMap>;
   /** Sonnet runner for the admin interpretation. */
   claudeRunner: (prompt: string) => Promise<string>;
+  language?: Language;
 }
 
 const STATUS_TAIL_CHARS = 1500;
@@ -45,7 +47,7 @@ export async function runJournalCommand(text: string | undefined, deps: JournalD
     ].join("\n");
   }
 
-  const raw = await deps.claudeRunner(buildAdminPrompt(text, portfolio.balance));
+  const raw = await deps.claudeRunner(buildAdminPrompt(text, portfolio.balance, deps.language ?? "de"));
   const parsed = parseAdminAction(raw);
   if (!parsed) {
     return "⚠️ Konnte die Anweisung nicht eindeutig interpretieren — Guthaben unverändert. Beispiel: \"setz dein Guthaben auf 500\" oder \"ich lege dir 200 dazu\".";

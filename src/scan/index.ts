@@ -48,6 +48,7 @@ async function main(): Promise<void> {
     fetchReadyToTrend: () => fetchReadyToTrend(fetch, { limit: 5 }),
     fetchStrongDaily: () => fetchStrongDaily(fetch, { limit: 5 }),
     fetchMomentum: () => fetchMomentum(fetch, { limit: 5 }),
+    language: env.language,
   };
 
   // Reddit off-radar via the Reddit OAuth API: opt-in (ENABLE_REDDIT_CRAWL).
@@ -100,6 +101,7 @@ async function main(): Promise<void> {
         send: (text) => telegram.sendMessage(text),
         saveKuer: (a) => saveKuerArtifact(dir, a),
         berlinDay,
+        language: env.language,
       },
     );
     console.log("[scan] Kandidatenkür done.");

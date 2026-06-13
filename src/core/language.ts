@@ -1,26 +1,43 @@
 /**
- * Prompt directives appended to the export prompts so Claude (a) answers in
- * German WITHOUT breaking the JSON parsers, and (b) behaves correctly under a
- * headless `claude -p` run (no tools, no permission prompts, JSON only).
+ * Prompt-Direktiven, die an die Export-/Persona-Prompts angehängt werden, damit
+ * Claude (a) Freitexte in der konfigurierten Sprache schreibt OHNE die
+ * JSON-Parser zu brechen und (b) headless korrekt läuft (keine Tools, nur JSON).
  *
- * The parsers require English tokens (parseTrendingChallenge: verdict ∈
- * {signal,noise,watch}; parseStrategy: fixed English keys) — only free text
- * becomes German.
+ * Ansatz "Direktiven-Overlay": Der Prompt-Körper bleibt deutsch; gewechselt wird
+ * nur das Sprach-LABEL ({@link FREETEXT_LABEL}). Für `de` ist das Ergebnis
+ * identisch zum bisherigen Verhalten. JSON-Schlüssel + Enums bleiben in JEDER
+ * Sprache englisch (die Parser in decision.ts / ape-intel.ts verlangen das).
  */
-export const GERMAN_DIRECTIVE_STRATEGY = [
-  "WICHTIG — SPRACHE: Schreibe ALLE Freitext-Inhalte auf DEUTSCH — auch die JSON-Werte",
-  "(recommendation, rationale, risks, barometerCritique, timeframe, instruments,",
-  "positionSizing, targetPrice, stopLoss, leverage). Die JSON-Schlüssel bleiben exakt",
-  "wie vorgegeben auf ENGLISCH. Für \"direction\" verwende weiterhin genau einen Wert aus",
-  "long | short | stay-out, für \"conviction\" genau low | medium | high (NICHT übersetzen).",
-].join("\n");
+export type Language = "de" | "en";
 
-export const GERMAN_DIRECTIVE_TRENDING = [
-  "WICHTIG — SPRACHE: Schreibe \"summary\", \"thesis\" und \"watch\" auf DEUTSCH.",
-  "Der Wert von \"verdict\" MUSS auf Englisch bleiben — exakt einer von:",
-  "signal | noise | watch (sonst kann ich die Antwort nicht verarbeiten).",
-  "Die JSON-Schlüssel bleiben Englisch.",
-].join("\n");
+export const SUPPORTED_LANGUAGES: readonly Language[] = ["de", "en"];
+
+/** Label, mit dem die (deutschsprachigen) Direktiven die Zielsprache benennen. */
+const FREETEXT_LABEL: Record<Language, string> = { de: "DEUTSCH", en: "ENGLISCH" };
+
+/** Das Sprach-Label für die Direktiven. Neue Sprache = ein Eintrag mehr oben. */
+export function freetextLabel(lang: Language): string {
+  return FREETEXT_LABEL[lang];
+}
+
+export function strategyDirective(lang: Language = "de"): string {
+  return [
+    `WICHTIG — SPRACHE: Schreibe ALLE Freitext-Inhalte auf ${FREETEXT_LABEL[lang]} — auch die JSON-Werte`,
+    "(recommendation, rationale, risks, barometerCritique, timeframe, instruments,",
+    "positionSizing, targetPrice, stopLoss, leverage). Die JSON-Schlüssel bleiben exakt",
+    "wie vorgegeben auf ENGLISCH. Für \"direction\" verwende weiterhin genau einen Wert aus",
+    "long | short | stay-out, für \"conviction\" genau low | medium | high (NICHT übersetzen).",
+  ].join("\n");
+}
+
+export function trendingDirective(lang: Language = "de"): string {
+  return [
+    `WICHTIG — SPRACHE: Schreibe \"summary\", \"thesis\" und \"watch\" auf ${FREETEXT_LABEL[lang]}.`,
+    "Der Wert von \"verdict\" MUSS auf Englisch bleiben — exakt einer von:",
+    "signal | noise | watch (sonst kann ich die Antwort nicht verarbeiten).",
+    "Die JSON-Schlüssel bleiben Englisch.",
+  ].join("\n");
+}
 
 export const HEADLESS_JSON_DIRECTIVE = [
   "WICHTIG — AUSFÜHRUNGSMODUS (headless): Dieser Aufruf läuft vollautomatisch ohne Tools",

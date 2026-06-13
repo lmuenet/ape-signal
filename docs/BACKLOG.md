@@ -9,7 +9,7 @@ Erledigt am 2026-06-12: „Stille Degradation härten (Lebenszeichen)" und
 
 ## Reihenfolge (vereinbart 2026-06-13)
 
-1. **A1 Language-Setting** ← *aktiv, Einstieg*
+1. ~~**A1 Language-Setting**~~ — **erledigt 2026-06-13** (`APE_LANGUAGE`, Default DE)
 2. **A2 Handelsfenster-Setting**
 3. **C1 TradingView-Embed + Kennzahlen-Overlay**
 4. **B2 EMA-Signal (EMA 8)**
@@ -22,10 +22,10 @@ Erledigt am 2026-06-12: „Stille Degradation härten (Lebenszeichen)" und
 
 ### A — Self-Host-Readiness (Config/Settings)
 
-- **A1 Language-Setting** — Sprache der Persona-Ausgaben (Journal, Telegram,
-  Tagesabschluss) konfigurierbar statt fest Deutsch. Baustein für den
-  Public-Self-Host-Pfad. *Isoliert, schneller Win; legt das Config-Muster, das
-  A2 und C3 wiederverwenden.*
+- ~~**A1 Language-Setting**~~ — **erledigt 2026-06-13.** Sprache aller
+  LLM-Freitexte (Persona-Journal/Kür/Tick, Scan-/Strategie-Freitexte) via
+  `APE_LANGUAGE` (`de`|`en`, Default `de`), Direktiven-Overlay. Spec/Plan unter
+  `docs/superpowers/`. Legt das Config-Muster, das A2 und C3 wiederverwenden.
 - **A2 Handelsfenster-Setting** — Konfigurierbar, in welchem Fenster Mr Ape
   agiert (heute fest US-Session 15:30–22:00 Europe/Berlin in Timern und
   Glossar). Betrifft systemd-**Timer**, **Fill-Fenster-Logik** und den

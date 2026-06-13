@@ -62,6 +62,16 @@ describe("runKuer", () => {
     expect(sent[0]).toContain("NVDA");
   });
 
+  it("passes the configured language into the research prompt", async () => {
+    let seen = "";
+    const { deps } = makeDeps(freshPortfolio(1000), quotes, {
+      language: "en",
+      researchRunner: vi.fn(async (p: string) => { seen = p; return DOSSIER; }),
+    });
+    await runKuer({ scanSummary: "NVDA: signal" }, deps);
+    expect(seen).toContain("ENGLISCH");
+  });
+
   it("degrades to scan-only context when research fails", async () => {
     const { deps, saved } = makeDeps(freshPortfolio(1000), quotes, {
       researchRunner: vi.fn(async () => {

@@ -50,6 +50,7 @@ async function main(): Promise<void> {
     fetchEarnings: (t) => (finnhubKey ? fetchNextEarnings(t, finnhubKey, fetch) : Promise.resolve(null)),
     fetchQuote: (t) => (finnhubKey ? fetchQuote(t, finnhubKey, fetch) : Promise.resolve(null)),
     claudeRunner: spawnClaudeRunner,
+    language: env.language,
   };
   const scanDeps: ScanDeps = {
     fetchSnapshot: () => fetchApewisdomSnapshot(fetch),
@@ -60,6 +61,7 @@ async function main(): Promise<void> {
     fetchReadyToTrend: () => fetchReadyToTrend(fetch, { limit: 5 }),
     fetchStrongDaily: () => fetchStrongDaily(fetch, { limit: 5 }),
     fetchMomentum: () => fetchMomentum(fetch, { limit: 5 }),
+    language: env.language,
   };
 
   const paperDir = dataDir();
@@ -70,6 +72,7 @@ async function main(): Promise<void> {
     readJournalTail: () => readJournalTail(paperDir),
     fetchQuotes: (tickers) => fetchTickQuotes(tickers, fetch),
     claudeRunner: createClaudeRunner({ model: "sonnet" }),
+    language: env.language,
   };
 
   let offset = readOffset(OFFSET_PATH);

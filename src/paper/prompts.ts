@@ -3,13 +3,16 @@
 // /journal admin). Free text is German; JSON keys/enums stay English (the
 // parsers in decision.ts require it).
 import { GUARDRAILS } from "./types";
+import { freetextLabel, type Language } from "../core/language";
 
-const JSON_ONLY = [
-  "WICHTIG — AUSFÜHRUNGSMODUS (headless): Dieser Aufruf läuft vollautomatisch.",
-  "Stelle KEINE Rückfragen und warte auf keine Bestätigung. Gib am Ende",
-  "AUSSCHLIESSLICH den geforderten JSON-Block zurück — ohne Vorrede, ohne Nachsatz.",
-  "Alle Freitext-WERTE im JSON auf DEUTSCH; Schlüssel und Enum-Werte exakt wie vorgegeben.",
-].join("\n");
+function jsonOnly(lang: Language): string {
+  return [
+    "WICHTIG — AUSFÜHRUNGSMODUS (headless): Dieser Aufruf läuft vollautomatisch.",
+    "Stelle KEINE Rückfragen und warte auf keine Bestätigung. Gib am Ende",
+    "AUSSCHLIESSLICH den geforderten JSON-Block zurück — ohne Vorrede, ohne Nachsatz.",
+    `Alle Freitext-WERTE im JSON auf ${freetextLabel(lang)}; Schlüssel und Enum-Werte exakt wie vorgegeben.`,
+  ].join("\n");
+}
 
 const PERSONA = [
   "Du bist Mr Ape, ein disziplinierter Swing-Trader mit einem fiktiven Spielgeld-Depot",
@@ -22,6 +25,7 @@ export interface DossierPromptInput {
   day: string;
   scanSummary: string; // verdicts/candidates from the PreUS scan
   journalTail: string;
+  language?: Language;
 }
 
 /** Stage 1 (Sonnet, WebSearch allowed): research what's hot → dossier JSON. */
@@ -54,7 +58,7 @@ export function buildDossierPrompt(input: DossierPromptInput): string {
     '  "marketContext": "Gesamtmarkt-Lage in 2-3 Sätzen (SPY/QQQ, Vix, Makro-Termine heute)"',
     "}",
     "",
-    JSON_ONLY,
+    jsonOnly(input.language ?? "de"),
   ].join("\n");
 }
 
@@ -63,6 +67,7 @@ export interface DebatePromptInput {
   dossierBlock: string;
   quotesBlock: string;
   journalTail: string;
+  language?: Language;
 }
 
 /**
@@ -94,7 +99,7 @@ export function buildDebatePrompt(input: DebatePromptInput): string {
     "  ]",
     "}",
     "",
-    JSON_ONLY,
+    jsonOnly(input.language ?? "de"),
   ].join("\n");
 }
 
@@ -105,6 +110,7 @@ export interface DecisionPromptInput {
   quotesBlock: string;
   portfolioBlock: string;
   journalTail: string;
+  language?: Language;
 }
 
 /** Stage 2 (Opus): decide up to 3 trades within the balanced guardrails. */
@@ -155,7 +161,7 @@ export function buildDecisionPrompt(input: DecisionPromptInput): string {
     "",
     '"side" ∈ long | short. "takeProfit" ist optional. Leeres trades-Array = heute kein Trade.',
     "",
-    JSON_ONLY,
+    jsonOnly(input.language ?? "de"),
   ].join("\n");
 }
 
@@ -167,6 +173,7 @@ export interface TickPromptInput {
   wakeBlock: string; // breached wake bands that triggered this call ("" if none)
   journalTail: string;
   isClose: boolean;
+  language?: Language;
 }
 
 /** Tick (Sonnet): manage open positions — never open new ones. */
@@ -212,12 +219,12 @@ export function buildTickPrompt(input: TickPromptInput): string {
     '  "journal": "kurze Notiz NUR wenn du etwas geändert hast oder etwas Wichtiges passiert ist, sonst null"',
     "}",
     "",
-    JSON_ONLY,
+    jsonOnly(input.language ?? "de"),
   ].join("\n");
 }
 
 /** /journal admin (Sonnet): interpret a free-text balance instruction. */
-export function buildAdminPrompt(text: string, balance: number): string {
+export function buildAdminPrompt(text: string, balance: number, language: Language = "de"): string {
   return [
     "Du verwaltest das Guthaben eines fiktiven Paper-Trading-Depots. Der Besitzer hat per",
     `Telegram geschrieben: "${text}"`,
@@ -231,8 +238,8 @@ export function buildAdminPrompt(text: string, balance: number): string {
     '- "note": keine Guthaben-Änderung — nur eine Notiz fürs Journal',
     "",
     "Antworte mit GENAU diesem JSON-Format (amount in USD, bei note: null):",
-    '{ "action": "set_balance", "amount": 500, "note": "kurze deutsche Journal-Notiz, was passiert ist" }',
+    '{ "action": "set_balance", "amount": 500, "note": "kurze Journal-Notiz, was passiert ist" }',
     "",
-    JSON_ONLY,
+    jsonOnly(language),
   ].join("\n");
 }

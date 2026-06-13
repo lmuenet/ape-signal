@@ -7,7 +7,8 @@ import {
   type TrendingRow,
   type TrendQuote,
 } from "../core/ape-intel";
-import { GERMAN_DIRECTIVE_TRENDING, HEADLESS_JSON_DIRECTIVE } from "../core/language";
+import { trendingDirective, HEADLESS_JSON_DIRECTIVE } from "../core/language";
+import type { Language } from "../core/language";
 import { snapshotToRows } from "./trending";
 import { formatReport } from "./format";
 import { offRadar } from "./offradar";
@@ -33,6 +34,7 @@ export interface ScanDeps {
   fetchReadyToTrend?: () => Promise<RsResult>;
   fetchStrongDaily?: () => Promise<RsResult>;
   fetchMomentum?: () => Promise<RsResult>;
+  language?: Language;
 }
 
 /**
@@ -167,7 +169,7 @@ export async function runScan(
     renderCandidateBlock(READY_TITLE, READY_NOTE, ready),
     renderCandidateBlock(STRONG_TITLE, STRONG_NOTE, strong),
     renderCandidateBlock(MOMENTUM_TITLE, MOMENTUM_NOTE, momentum),
-    GERMAN_DIRECTIVE_TRENDING,
+    trendingDirective(deps.language ?? "de"),
     HEADLESS_JSON_DIRECTIVE,
   ]
     .filter((section) => section.length > 0)

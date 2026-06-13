@@ -111,6 +111,16 @@ describe("runStrategy price + language", () => {
     expect(seen).toContain("KEINE Tools");
   });
 
+  it("switches the free-text directive to English when deps.language is en", async () => {
+    let seen = "";
+    await runStrategy("avgo", { risk: "balanced", horizon: "swing" }, deps({
+      language: "en",
+      claudeRunner: async (p) => { seen = p; return ""; },
+    }));
+    expect(seen).toContain("ENGLISCH");
+    expect(seen).not.toContain("auf DEUTSCH");
+  });
+
   it("notes 'Kein Live-Kurs' when the quote source fails", async () => {
     let seen = "";
     await runStrategy("avgo", { risk: "balanced", horizon: "swing" }, deps({
