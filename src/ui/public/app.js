@@ -1,5 +1,7 @@
 // Depot-UI frontend (read-only). LightweightCharts is loaded globally via
 // /vendor/lightweight-charts.js (v4 standalone build).
+import { buildLegend } from "./legend.js";
+
 const $ = (sel) => document.querySelector(sel);
 const usd = (n) => `${n < 0 ? "-" : ""}$${Math.abs(n).toFixed(2)}`;
 const ts = (iso) => Math.floor(Date.parse(iso) / 1000);
@@ -17,6 +19,19 @@ function priceLine(series, price, title, color) {
   series.createPriceLine({ price, title, color, lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed });
 }
 
+function legendBar(pos, quotes) {
+  const model = buildLegend(pos, quotes[pos.ticker]?.close);
+  const fmtPx = (n) => (n === null ? "—" : n.toFixed(2));
+  const fmtPct = (p) => (p === null ? "" : ` (${p >= 0 ? "+" : ""}${p.toFixed(1)}%)`);
+  const cell = (label, px, pct, tone) =>
+    `<span class="leg-cell leg-${tone}"><span class="leg-k">${label}</span> ${fmtPx(px)}${fmtPct(pct)}</span>`;
+  const cells = [
+    cell("Kurs", model.price, null, "px"),
+    ...model.rows.map((r) => cell(r.label, r.price, r.pct, r.tone)),
+  ];
+  return `<div class="legend">${cells.join("")}</div>`;
+}
+
 async function api(path, asText = false) {
   const res = await fetch(path);
   if (!res.ok) throw new Error(`${path}: HTTP ${res.status}`);
@@ -31,9 +46,8 @@ function positionCard(pos, quotes) {
   el.innerHTML = `
     <b>${pos.ticker}</b> ${pos.side} ${pos.leverage}x — Einsatz ${usd(pos.stake)}
     ${pnl === null ? "" : `<span class="${pnl >= 0 ? "pnl-pos" : "pnl-neg"}">P&amp;L ${usd(pnl)}</span>`}
-    <div class="meta">Entry ${pos.entryPrice} · SL ${pos.stopLoss}${pos.takeProfit ? ` · TP ${pos.takeProfit}` : ""}
-      · Wake ${pos.wakeBelow ?? "—"}/${pos.wakeAbove ?? "—"}</div>
     <div class="meta">${pos.thesis ?? ""}</div>
+    ${legendBar(pos, quotes)}
     <div class="chart"></div>`;
   return el;
 }
