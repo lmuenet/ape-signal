@@ -38,6 +38,7 @@ async function main(): Promise<void> {
       send: (text) => telegram.sendMessage(text),
       berlinDay,
       berlinStamp,
+      language: env.language,
     },
   );
   console.log(`[tick] ${LABEL} done.`);
