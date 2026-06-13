@@ -21,3 +21,7 @@ logs/
 Thumbs.db
 .idea/
 .vscode/
+
+# Claude Code — lokal, nicht teilen
+.claude/
+CLAUDE.md
