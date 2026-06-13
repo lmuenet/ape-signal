@@ -2,6 +2,7 @@
 // Pure, dependency-injected checks + a thin entrypoint. No new runtime deps.
 import { readFileSync, existsSync } from "node:fs";
 import { loadEnv, truthy } from "./env";
+import { loadSession } from "./session";
 import { postScan } from "../core/tvScanner";
 import { spawnClaudeRunner } from "../claude/invoke";
 
@@ -61,6 +62,20 @@ export function checkRequiredEnv(source: Record<string, string | undefined>): Ch
     };
   } catch (err) {
     return { name: "Required env", status: "fail", detail: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+/** Aktive Handelssession (A2): Fenster + Default-Tick-Intervall. Hard-fail bei Config-Fehler. */
+export function checkSession(source: Record<string, string | undefined>): CheckResult {
+  try {
+    const s = loadSession(source);
+    return {
+      name: "Session",
+      status: "ok",
+      detail: `${s.open}–${s.close}, Kür-Scan ${s.kuerScan}, Tick ${s.tickIntervalMin}min`,
+    };
+  } catch (err) {
+    return { name: "Session", status: "fail", detail: err instanceof Error ? err.message : String(err) };
   }
 }
 
@@ -181,6 +196,7 @@ export async function runDoctor(deps: DoctorDeps): Promise<CheckResult[]> {
   const { source, fetchFn, claudeRunner } = deps;
   const results: CheckResult[] = [];
   results.push(checkRequiredEnv(source));
+  results.push(checkSession(source));
   results.push(await checkClaude(claudeRunner));
 
   const botToken = source.TELEGRAM_BOT_TOKEN;

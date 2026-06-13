@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { parseEnvFile, withTimeout, formatResults, hasFailure, type CheckResult } from "./doctor";
-import { checkRequiredEnv, checkClaude, checkTelegram } from "./doctor";
+import { checkRequiredEnv, checkClaude, checkTelegram, checkSession } from "./doctor";
 
 function jsonResponse(body: unknown, ok = true, status = 200): Response {
   return { ok, status, json: async () => body } as Response;
@@ -67,6 +67,24 @@ describe("checkRequiredEnv", () => {
   it("defaults the reported language to de", () => {
     const r = checkRequiredEnv({ TELEGRAM_BOT_TOKEN: "t", TELEGRAM_CHAT_ID: "c" });
     expect(r.detail).toContain("de");
+  });
+});
+
+describe("checkSession", () => {
+  it("reports the active window (default US)", () => {
+    const r = checkSession({ TELEGRAM_BOT_TOKEN: "t", TELEGRAM_CHAT_ID: "c" });
+    expect(r.status).toBe("ok");
+    expect(r.detail).toContain("15:30");
+    expect(r.detail).toContain("22:00");
+    expect(r.detail).toContain("5min");
+  });
+  it("reports the xetra window", () => {
+    expect(checkSession({ SESSION: "xetra" }).detail).toContain("09:00");
+  });
+  it("fails on an invalid session config", () => {
+    const r = checkSession({ SESSION: "tokyo" });
+    expect(r.status).toBe("fail");
+    expect(r.detail).toMatch(/SESSION/);
   });
 });
 
@@ -176,7 +194,7 @@ describe("runDoctor", () => {
       claudeRunner: async () => "OK",
     });
     const names = results.map((r) => r.name);
-    expect(names).toEqual(["Required env", "Claude CLI", "Telegram", "TradingView"]);
+    expect(names).toEqual(["Required env", "Session", "Claude CLI", "Telegram", "TradingView"]);
     expect(results.every((r) => r.status === "ok")).toBe(true);
   });
 
