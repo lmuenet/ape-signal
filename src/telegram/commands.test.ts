@@ -38,3 +38,21 @@ describe("parseCommand", () => {
     expect(parseCommand("hello")).toEqual({ kind: "unknown", text: "hello" });
   });
 });
+
+describe("parseCommand /ticker", () => {
+  it("parses a valid integer", () => {
+    expect(parseCommand("/ticker 3")).toEqual({ kind: "ticker", minutes: 3 });
+  });
+  it("treats a bare /ticker as a query", () => {
+    expect(parseCommand("/ticker")).toEqual({ kind: "ticker" });
+  });
+  it("flags a non-integer / out-of-range arg as badArg", () => {
+    expect(parseCommand("/ticker abc")).toEqual({ kind: "ticker", badArg: "abc" });
+    expect(parseCommand("/ticker 2.5")).toEqual({ kind: "ticker", badArg: "2.5" });
+    expect(parseCommand("/ticker 0")).toEqual({ kind: "ticker", badArg: "0" });
+    expect(parseCommand("/ticker 61")).toEqual({ kind: "ticker", badArg: "61" });
+  });
+  it("ignores a bot @suffix on the command", () => {
+    expect(parseCommand("/ticker@apebot 5")).toEqual({ kind: "ticker", minutes: 5 });
+  });
+});
