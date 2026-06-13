@@ -104,6 +104,15 @@ describe("ui server", () => {
     expect(index.headers.get("content-type")).toContain("text/html");
   });
 
+  it("serves the legend module as javascript", async () => {
+    fixture();
+    const base = await start();
+    const res = await fetch(`${base}/legend.js`, { headers: AUTH });
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toContain("javascript");
+    expect(await res.text()).toContain("buildLegend");
+  });
+
   it("404s unknown paths and blocks path traversal", async () => {
     fixture();
     const base = await start();
