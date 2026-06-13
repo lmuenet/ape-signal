@@ -1,4 +1,6 @@
 // src/config/env.ts
+import { SUPPORTED_LANGUAGES, type Language } from "../core/language";
+
 export interface Env {
   telegramBotToken: string;
   telegramChatId: string;
@@ -8,6 +10,7 @@ export interface Env {
   redditClientId?: string;
   redditClientSecret?: string;
   redditUserAgent?: string;
+  language: Language;
 }
 
 const REQUIRED = ["TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID"] as const;
@@ -21,6 +24,17 @@ export function truthy(v: string | undefined): boolean {
   if (!v) return false;
   const t = v.trim().toLowerCase();
   return t === "1" || t === "true" || t === "on" || t === "yes";
+}
+
+/** APE_LANGUAGE → Language. Unset/leer → "de". Ungültig → throw (fail-fast). */
+function parseLanguage(source: Record<string, string | undefined>): Language {
+  const raw = source.APE_LANGUAGE;
+  if (!raw || raw.trim() === "") return "de";
+  const v = raw.trim().toLowerCase();
+  if ((SUPPORTED_LANGUAGES as readonly string[]).includes(v)) return v as Language;
+  throw new Error(
+    `Invalid APE_LANGUAGE: "${raw}". Supported values: ${SUPPORTED_LANGUAGES.join(", ")}`,
+  );
 }
 
 /**
@@ -42,6 +56,7 @@ export function loadEnv(source: Record<string, string | undefined> = process.env
     redditClientId: val(source, "REDDIT_CLIENT_ID"),
     redditClientSecret: val(source, "REDDIT_CLIENT_SECRET"),
     redditUserAgent: val(source, "REDDIT_USER_AGENT"),
+    language: parseLanguage(source),
   };
 }
 

@@ -18,6 +18,28 @@ describe("loadEnv", () => {
   });
 });
 
+describe("APE_LANGUAGE", () => {
+  const base = { TELEGRAM_BOT_TOKEN: "t", TELEGRAM_CHAT_ID: "c" };
+
+  it("defaults to de when unset", () => {
+    expect(loadEnv(base).language).toBe("de");
+  });
+
+  it("accepts en", () => {
+    expect(loadEnv({ ...base, APE_LANGUAGE: "en" }).language).toBe("en");
+  });
+
+  it("is case-insensitive", () => {
+    expect(loadEnv({ ...base, APE_LANGUAGE: "EN" }).language).toBe("en");
+  });
+
+  it("throws on an unsupported value, listing the allowed ones", () => {
+    expect(() => loadEnv({ ...base, APE_LANGUAGE: "xx" })).toThrowError(
+      /APE_LANGUAGE.*de.*en/s,
+    );
+  });
+});
+
 describe("optional finnhub + reddit-crawl flag", () => {
   it("passes through finnhub key and reddit-crawl flag", () => {
     const cfg = loadEnv({
