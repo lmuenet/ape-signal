@@ -26,6 +26,7 @@ const require_ = createRequire(import.meta.url);
 const STATIC: Record<string, { file: string; type: string }> = {
   "/": { file: join(PUBLIC_DIR, "index.html"), type: "text/html; charset=utf-8" },
   "/app.js": { file: join(PUBLIC_DIR, "app.js"), type: "text/javascript; charset=utf-8" },
+  "/legend.js": { file: join(PUBLIC_DIR, "legend.js"), type: "text/javascript; charset=utf-8" },
   "/style.css": { file: join(PUBLIC_DIR, "style.css"), type: "text/css; charset=utf-8" },
   "/vendor/lightweight-charts.js": {
     // The package's "exports" hides dist/, so resolve the entry and go from there.
