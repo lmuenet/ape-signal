@@ -4,6 +4,7 @@ export type Command =
   | { kind: "strategie"; ticker: string; profile: TradingProfile }
   | { kind: "scan" }
   | { kind: "journal"; text?: string }
+  | { kind: "ticker"; minutes?: number; badArg?: string }
   | { kind: "unknown"; text: string };
 
 /** Parse a Telegram message into a typed command. Pure. */
@@ -26,6 +27,14 @@ export function parseCommand(text: string): Command {
     // normalizeProfile silently drops invalid risk/horizon words -> defaults.
     const profile = normalizeProfile({ risk: rest[1], horizon: rest[2] });
     return { kind: "strategie", ticker: ticker.toUpperCase(), profile };
+  }
+
+  if (head === "/ticker") {
+    if (rest.length === 0) return { kind: "ticker" };
+    const raw = rest[0];
+    const n = Number(raw);
+    if (Number.isInteger(n) && n >= 1 && n <= 60) return { kind: "ticker", minutes: n };
+    return { kind: "ticker", badArg: raw };
   }
 
   return { kind: "unknown", text: trimmed };

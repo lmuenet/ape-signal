@@ -16,6 +16,8 @@ import { parseCommand } from "./commands";
 import { runJournalCommand, type JournalDeps } from "../paper/journalCommand";
 import { fetchTickQuotes } from "../paper/quotes";
 import { appendJournal, dataDir, loadPortfolio, readJournalTail, savePortfolio } from "../paper/store";
+import { resolveTickInterval, writeTickInterval } from "../paper/tickInterval";
+import { loadSession } from "../config/session";
 import { readOffset, writeOffset } from "./offset";
 import { runStrategy, formatStrategy, type StrategyDeps } from "../strategy/strategy";
 import { runScan, type ScanDeps } from "../scan/pipeline";
@@ -114,8 +116,19 @@ async function handle(
       await telegram.sendMessage(`Analysiere ${cmd.ticker} (${cmd.profile.risk}/${cmd.profile.horizon})…`);
       const { strategy, raw, quote } = await runStrategy(cmd.ticker, cmd.profile, strategyDeps);
       await telegram.sendMessage(formatStrategy(cmd.ticker, cmd.profile, strategy, raw, quote), { parseMode: "HTML" });
+    } else if (cmd.kind === "ticker") {
+      const dir = dataDir();
+      if (cmd.badArg !== undefined) {
+        await telegram.sendMessage("⚠️ /ticker braucht eine ganze Zahl 1–60 (Minuten). Beispiel: /ticker 3");
+      } else if (cmd.minutes === undefined) {
+        const cur = resolveTickInterval(dir, loadSession(process.env).tickIntervalMin);
+        await telegram.sendMessage(`⏱️ Aktuelles Tick-Intervall: ${cur} min.`);
+      } else {
+        writeTickInterval(dir, cmd.minutes);
+        await telegram.sendMessage(`⏱️ Tick-Intervall jetzt ${cmd.minutes} min (ab dem nächsten Tick).`);
+      }
     } else {
-      await telegram.sendMessage("Befehle: /strategie TICKER [conservative|balanced|aggressive] [intraday|swing|position] · /scan · /journal [z.B. \"setz dein Guthaben auf 500\"]");
+      await telegram.sendMessage("Befehle: /strategie TICKER [conservative|balanced|aggressive] [intraday|swing|position] · /scan · /journal [z.B. \"setz dein Guthaben auf 500\"] · /ticker [1–60]");
     }
   } catch (err) {
     await telegram.sendMessage(`⚠️ Fehler: ${err instanceof Error ? err.message : String(err)}`);

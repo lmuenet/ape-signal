@@ -38,6 +38,8 @@ export interface TickDeps {
   berlinDay: (d: Date) => string;
   berlinStamp: (d: Date) => string;
   language?: Language;
+  /** Effektives Tick-Intervall in Minuten (A2). Fehlt → keine Drossel. */
+  tickIntervalMin?: number;
 }
 
 export interface TickOptions {
@@ -72,6 +74,18 @@ export async function runTick(opts: TickOptions, deps: TickDeps): Promise<void> 
     console.log("[tick] nothing to do (no open positions/orders).");
     return;
   }
+
+  // --- Tick-Intervall-Drossel (A2): einen zu frühen Monitor-Tick überspringen,
+  // BEVOR wir TradingView nach Kursen fragen. Der Close-Tick drosselt nie. ---
+  if (!opts.isClose && deps.tickIntervalMin !== undefined && portfolio.lastTickAt) {
+    const elapsedMs = now.getTime() - Date.parse(portfolio.lastTickAt);
+    if (elapsedMs < deps.tickIntervalMin * 60_000) {
+      console.log(`[tick] throttled (interval ${deps.tickIntervalMin}min not elapsed).`);
+      return;
+    }
+  }
+  // Diesen Tick als "echten" Tick markieren; reist in den nächsten savePortfolio mit.
+  portfolio = { ...portfolio, lastTickAt: now.toISOString() };
 
   let health = deps.loadHealth(day);
   let quotes: QuoteMap = {};

@@ -71,6 +71,35 @@ describe("runTick", () => {
     expect(sent).toHaveLength(0);
   });
 
+  it("throttles a monitor tick before fetching quotes when the interval has not elapsed", async () => {
+    const lastTickAt = new Date(NOW.getTime() - 2 * 60_000).toISOString(); // 2 min ago
+    const p: Portfolio = { ...freshPortfolio(1000), positions: [position()], lastTickAt };
+    const { deps, saved } = makeDeps(p, { NVDA: { close: 100, changePct: 0, high: 100, low: 100 } });
+    deps.tickIntervalMin = 5;
+    await runTick({ isClose: false }, deps);
+    expect(deps.fetchQuotes).not.toHaveBeenCalled();
+    expect(saved).toHaveLength(0);
+  });
+
+  it("runs the tick (and stamps lastTickAt) once the interval has elapsed", async () => {
+    const lastTickAt = new Date(NOW.getTime() - 10 * 60_000).toISOString(); // 10 min ago
+    const p: Portfolio = { ...freshPortfolio(1000), positions: [position()], lastTickAt };
+    const { deps, saved } = makeDeps(p, { NVDA: { close: 100, changePct: 0, high: 100, low: 100 } });
+    deps.tickIntervalMin = 5;
+    await runTick({ isClose: false }, deps);
+    expect(deps.fetchQuotes).toHaveBeenCalled();
+    expect(saved.at(-1)?.lastTickAt).toBe(NOW.toISOString());
+  });
+
+  it("never throttles the close tick", async () => {
+    const lastTickAt = new Date(NOW.getTime() - 1 * 60_000).toISOString(); // 1 min ago
+    const p: Portfolio = { ...freshPortfolio(1000), positions: [position()], lastTickAt };
+    const { deps } = makeDeps(p, { NVDA: { close: 100, changePct: 0, high: 100, low: 100 } });
+    deps.tickIntervalMin = 5;
+    await runTick({ isClose: true }, deps);
+    expect(deps.fetchQuotes).toHaveBeenCalled();
+  });
+
   it("fills a market order, posts the event, journals it and saves", async () => {
     const p: Portfolio = { ...freshPortfolio(900), orders: [order()] };
     const { deps, saved, journal, sent } = makeDeps(p, { TSLA: { close: 200, changePct: 0, high: 201, low: 199 } });

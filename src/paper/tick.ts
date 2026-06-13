@@ -10,6 +10,8 @@ import { appendTickHistory } from "./tickHistory";
 import { appendJournal, berlinDay, berlinStamp, dataDir, loadPortfolio, readJournalTail, savePortfolio } from "./store";
 import { loadHealth, saveHealth } from "./health";
 import { runTick } from "./tickPipeline";
+import { loadSession } from "../config/session";
+import { resolveTickInterval } from "./tickInterval";
 
 const LABEL = process.argv[2] ?? "Tick";
 const START_BALANCE = Number(process.env.PAPER_START_BALANCE ?? "2000");
@@ -22,6 +24,7 @@ async function main(): Promise<void> {
   }
   const telegram = createTelegramClient({ botToken: env.telegramBotToken, chatId: env.telegramChatId });
   const dir = dataDir();
+  const tickIntervalMin = resolveTickInterval(dir, loadSession(process.env).tickIntervalMin);
 
   await runTick(
     { isClose: LABEL.toLowerCase() === "close" },
@@ -39,6 +42,7 @@ async function main(): Promise<void> {
       berlinDay,
       berlinStamp,
       language: env.language,
+      tickIntervalMin,
     },
   );
   console.log(`[tick] ${LABEL} done.`);

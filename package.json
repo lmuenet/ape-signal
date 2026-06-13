@@ -8,6 +8,7 @@
     "scan": "tsx src/scan/index.ts",
     "listener": "tsx src/telegram/listener.ts",
     "doctor": "tsx src/config/doctor.ts",
+    "gen-timers": "tsx src/config/genTimers.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "tick": "tsx src/paper/tick.ts",

@@ -78,3 +78,24 @@ describe("prompt language label", () => {
     expect(buildDossierPrompt(input)).toContain("DEUTSCH");
   });
 });
+
+describe("session-neutral wording", () => {
+  it("decision prompt says 'Handelsstart' not 'US-Open'", () => {
+    const p = buildDecisionPrompt({
+      day: "2026-06-11", dossierBlock: "", debateBlock: "", quotesBlock: "",
+      portfolioBlock: "", journalTail: "",
+    });
+    expect(p).toContain("kurz vor Handelsstart");
+    expect(p).not.toContain("US-Open");
+  });
+
+  it("tick prompt uses session-neutral session/close wording", () => {
+    const base = {
+      stamp: "2026-06-11 15:35", portfolioBlock: "(d)", quotesBlock: "(q)",
+      eventsBlock: "", wakeBlock: "", journalTail: "", isClose: false,
+    };
+    expect(buildTickPrompt(base)).toContain("Handelssession läuft");
+    expect(buildTickPrompt({ ...base, isClose: true })).toContain("Handelsschluss");
+    expect(buildTickPrompt(base)).not.toContain("US-Session");
+  });
+});

@@ -58,6 +58,16 @@ Notes:
 - `CLAUDE_CODE_OAUTH_TOKEN` (subscription, from `claude setup-token`) lives in
   `/etc/ape-signal.env`. It is valid ~1 year — renew around day 350. Token expiry
   is silent; the scan's Telegram failure alert is the backstop.
+- `SESSION` (`us` | `xetra`, Default `us`) plus optionale Overrides
+  (`SESSION_OPEN`/`SESSION_CLOSE`/`SESSION_KUER_SCAN`, `TICK_INTERVAL_MIN`) in
+  `/etc/ape-signal.env` definieren das Handelsfenster. Die drei
+  session-getriebenen Timer (`ape-signal-scan-preus`, `ape-signal-tick`,
+  `ape-signal-tick-close`) werden daraus generiert: `npm run gen-timers`
+  (schreibt nach `/etc/systemd/system`, `--out=<dir>` für Tests) → danach
+  `systemctl daemon-reload`. Ohne Generator-Lauf gelten die committeten
+  US-Baseline-Timer. Der Tick-Timer feuert jede Minute im Fenster; das effektive
+  Intervall drosselt zur Laufzeit (live per Telegram `/ticker N`). Der
+  PreOpen-Scan (08:45) ist nicht session-getrieben und bleibt fix.
 - `APE_LANGUAGE` (optional, `de` | `en`, default `de`) sets the language of ALL
   AI free text (Persona-Journal/Kür/Tick, Scan- und Strategie-Freitexte). It
   belongs in `/etc/ape-signal.env` (read by the systemd core: scan/tick/listener)
