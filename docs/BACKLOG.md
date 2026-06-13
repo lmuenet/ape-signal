@@ -11,9 +11,11 @@ Erledigt am 2026-06-12: „Stille Degradation härten (Lebenszeichen)" und
 
 1. ~~**A1 Language-Setting**~~ — **erledigt 2026-06-13** (`APE_LANGUAGE`, Default DE)
 2. ~~**A2 Handelsfenster-Setting**~~ — **erledigt 2026-06-13** (`SESSION` us/xetra + `/ticker`)
-3. **C1 TradingView-Embed + Kennzahlen-Overlay**
-4. **B2 EMA-Signal (EMA 8)**
-5. **B1 Proxy fürs Crawling**
+3. ~~**C1 Kennzahlen-Legende (Overlay-Baseline)**~~ — **erledigt 2026-06-13.**
+   Embed/Refresh-Teil von C1 bleibt offen (hängt an B1, s. u.)
+4. **B1 Proxy fürs Crawling** — vorgezogen: schaltet C1-Embed, B2-Candles/EMA
+   und breitere Recherche frei
+5. **B2 EMA-Signal (EMA 8)**
 6. **C2 Mr-Ape-Chat read-only**
 7. **C3 Setup-Assistent (Stufe 2)**
 8. **D1 Claude-Health-Check** (quer, einschiebbar wenn Limit-Blindheit nervt)
@@ -53,14 +55,18 @@ Erledigt am 2026-06-12: „Stille Degradation härten (Lebenszeichen)" und
 ### C — UI-Ausbau (Depot-UI)
 
 - **C1 TradingView-Embed + Kennzahlen-Overlay** — Zwei trennbare Teile:
-  - **Overlay (sicher, von uns lieferbar):** Wake-up-Wert, Entry & Co. der
-    offenen Positionen sollen **immer sichtbar** neben/über dem Chart stehen,
-    damit der Verlauf leichter nachvollziehbar ist.
-  - **Embed + Refresh (abhängig von TradingViews Restriktionen):** Kontext-Chart
-    mit voller Markthistorie pro Ticker; falls kein direktes Andocken an die
-    TradingView-Live-View möglich ist, braucht es eine **Refresh-Mechanik**.
-  - *In der Spec trennen, damit das sichere Overlay nicht am unsicheren Embed
-    hängt.* (ADR 0004, Alternativen.)
+  - ~~**Overlay (sicher, von uns lieferbar):**~~ **erledigt 2026-06-13** —
+    feste Kennzahlen-Legende über jedem Positions-Chart (Kurs · Entry · TP ·
+    Wake↑ · Wake↓ · SL, je mit %-Abstand zum Kurs), reine Frontend-Arbeit im
+    `ape-ui`-Container. Spec/Plan unter `docs/superpowers/`
+    (`2026-06-13-c1-kennzahlen-legende-*`). Schalter „simpel/detailliert"
+    bewusst weggelassen (kommt mit B2).
+  - **Embed + Refresh (abhängig von TradingViews Restriktionen) — OFFEN:**
+    Kontext-Chart mit voller Markthistorie pro Ticker; falls kein direktes
+    Andocken an die TradingView-Live-View möglich ist, braucht es eine
+    **Refresh-Mechanik**. Hängt an B1 (Proxy) — der VPS erreicht heute keine
+    freie Chart-/Candle-Quelle (ADR 0001). Diese Daten sind nicht nur UI-Deko,
+    sondern wichtig für Mr Apes Entscheidungen.
 - **C2 Mr-Ape-Chat read-only** — den /journal-Dialog (Fragen + Antworten)
   read-only im UI sichtbar machen. *Voraussetzung:* der Listener persistiert
   den Dialog (heute nur flüchtig in Telegram). Schreiben aus dem UI wäre
