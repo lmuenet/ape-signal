@@ -50,11 +50,15 @@ export function hasFailure(results: CheckResult[]): boolean {
   return results.some((r) => r.status === "fail");
 }
 
-/** Required env present (Telegram). Hard-fail with the list of what's missing. */
+/** Required env present (Telegram) + aktive Sprache. Hard-fail mit Liste des Fehlenden. */
 export function checkRequiredEnv(source: Record<string, string | undefined>): CheckResult {
   try {
-    loadEnv(source);
-    return { name: "Required env", status: "ok", detail: "TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID present" };
+    const env = loadEnv(source);
+    return {
+      name: "Required env",
+      status: "ok",
+      detail: `TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID present (Sprache: ${env.language})`,
+    };
   } catch (err) {
     return { name: "Required env", status: "fail", detail: err instanceof Error ? err.message : String(err) };
   }

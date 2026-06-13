@@ -59,6 +59,15 @@ describe("checkRequiredEnv", () => {
     expect(r.detail).toMatch(/TELEGRAM_BOT_TOKEN/);
     expect(r.detail).toMatch(/TELEGRAM_CHAT_ID/);
   });
+  it("reports the active language in the ok detail", () => {
+    const r = checkRequiredEnv({ TELEGRAM_BOT_TOKEN: "t", TELEGRAM_CHAT_ID: "c", APE_LANGUAGE: "en" });
+    expect(r.status).toBe("ok");
+    expect(r.detail).toContain("en");
+  });
+  it("defaults the reported language to de", () => {
+    const r = checkRequiredEnv({ TELEGRAM_BOT_TOKEN: "t", TELEGRAM_CHAT_ID: "c" });
+    expect(r.detail).toContain("de");
+  });
 });
 
 describe("checkClaude", () => {
