@@ -46,6 +46,10 @@ Erledigt am 2026-06-12: „Stille Degradation härten (Lebenszeichen)" und
   *woher die Candles* (Zenbotscanner direkt vs. eigene Quelle) und ob EMA 8 nur
   **angezeigt** oder auch in **Scan-/Signal-Logik** einfließt. Profitiert von
   B1 (saubere Candles), Berechnung selbst aber eigenständig/teilbar.
+- **B3 Trending-Scan überarbeiten** — der Trending-Report liefert aktuell
+  faktisch immer dieselben Ticker und damit wenig Mehrwert; Kür + Paper-Trading
+  sind effizienter. Klären: behalten/umbauen/abschalten, und ob der Morgen-
+  PreOpen-Scan dabei mitwandert (heute fix 08:45, in A2 bewusst nicht angefasst).
 
 ### C — UI-Ausbau (Depot-UI)
 
