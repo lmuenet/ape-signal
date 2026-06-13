@@ -10,7 +10,7 @@ Erledigt am 2026-06-12: „Stille Degradation härten (Lebenszeichen)" und
 ## Reihenfolge (vereinbart 2026-06-13)
 
 1. ~~**A1 Language-Setting**~~ — **erledigt 2026-06-13** (`APE_LANGUAGE`, Default DE)
-2. **A2 Handelsfenster-Setting**
+2. ~~**A2 Handelsfenster-Setting**~~ — **erledigt 2026-06-13** (`SESSION` us/xetra + `/ticker`)
 3. **C1 TradingView-Embed + Kennzahlen-Overlay**
 4. **B2 EMA-Signal (EMA 8)**
 5. **B1 Proxy fürs Crawling**
@@ -26,11 +26,10 @@ Erledigt am 2026-06-12: „Stille Degradation härten (Lebenszeichen)" und
   LLM-Freitexte (Persona-Journal/Kür/Tick, Scan-/Strategie-Freitexte) via
   `APE_LANGUAGE` (`de`|`en`, Default `de`), Direktiven-Overlay. Spec/Plan unter
   `docs/superpowers/`. Legt das Config-Muster, das A2 und C3 wiederverwenden.
-- **A2 Handelsfenster-Setting** — Konfigurierbar, in welchem Fenster Mr Ape
-  agiert (heute fest US-Session 15:30–22:00 Europe/Berlin in Timern und
-  Glossar). Betrifft systemd-**Timer**, **Fill-Fenster-Logik** und den
-  **Close-/Tagesabschluss-Zeitpunkt**. *Größter Hebel, aber breite Wirkung —
-  braucht saubere Spec.*
+- ~~**A2 Handelsfenster-Setting**~~ — **erledigt 2026-06-13.** Konfigurierbares
+  Handelsfenster via `SESSION` (Presets `us`/`xetra`) + Overrides; systemd-Timer
+  per `npm run gen-timers` generiert; Tick-Intervall als Laufzeit-Drossel (live
+  per Telegram `/ticker N`). Spec/Plan unter `docs/superpowers/`.
 
 ### B — Datenqualität & Signale (Crawling/Analyse)
 

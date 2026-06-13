@@ -20,7 +20,10 @@ Stops/Limits setzt und das Journal schreibt. Entscheider, nicht Rechner.
 
 ### Monitor-Tick
 Ein häufiges, rein deterministisches Kurs-Update der offenen Positionen während
-der US-Session (alle 5 Minuten, Mo–Fr 15:30–22:00 Europe/Berlin). Beim
+der Handelssession (Default US 15:30–22:00 Europe/Berlin, konfigurierbar via
+`SESSION`/Overrides — siehe Spec A2). Der Tick-Timer feuert jede Minute im
+Fenster; das effektive Intervall drosselt zur Laufzeit (Default 5 min, live per
+Telegram `/ticker N` änderbar). Beim
 Monitor-Tick prüft die Engine Fills, Stops, Liquidationen und die
 Wake-Up-Bänder. Monitor-Ticks entscheiden nichts und eröffnen nie neue
 Positionen; sie können einen Manager-Tick auslösen. Bleiben die Kurse mehrere
