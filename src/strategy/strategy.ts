@@ -14,7 +14,7 @@ import {
   type Strategy,
   type Quote,
 } from "../core/ape-intel";
-import { GERMAN_DIRECTIVE_STRATEGY, HEADLESS_JSON_DIRECTIVE } from "../core/language";
+import { strategyDirective, HEADLESS_JSON_DIRECTIVE } from "../core/language";
 
 export interface StrategyDeps {
   fetchApewisdom: () => Promise<ApewisdomSnapshot>;
@@ -85,7 +85,7 @@ export async function runStrategy(
     basePrompt: DEFAULT_EXPORT_PROMPT,
     profile,
   });
-  const prompt = `${base}\n\n${renderPriceBlock(input.ticker, quote)}\n\n${GERMAN_DIRECTIVE_STRATEGY}\n\n${HEADLESS_JSON_DIRECTIVE}`;
+  const prompt = `${base}\n\n${renderPriceBlock(input.ticker, quote)}\n\n${strategyDirective()}\n\n${HEADLESS_JSON_DIRECTIVE}`;
   const raw = await deps.claudeRunner(prompt);
   const strategy = parseStrategy(raw);
   return { input, strategy, raw, quote };
