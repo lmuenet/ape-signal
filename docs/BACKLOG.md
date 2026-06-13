@@ -68,6 +68,14 @@ Erledigt am 2026-06-12: „Stille Degradation härten (Lebenszeichen)" und
 - **C3 Setup-Assistent (Stufe 2)** — Erst-Einrichtung und Key-Pflege (Telegram,
   Finnhub) im UI; Secrets in geteilter Config-Datei, env als Bootstrap
   (ADR 0004, Punkt 5). *Erst sinnvoll, wenn Public-Self-Host realer wird.*
+- **C4 Session/Tick-Verwaltung im UI** (Nutzerwunsch 2026-06-13) — `SESSION`,
+  Overrides und Tick-Intervall (heute `/etc/ape-signal.env` + `npm run
+  gen-timers`/`/ticker`) bequem aus dem Depot-UI-Container pflegen. Knackpunkt:
+  das UI ist read-only und im **eigenen Container** (ADR 0004) — Timer-Regen +
+  `systemctl daemon-reload` laufen auf dem **Host**, nicht im Container. Braucht
+  also einen privilegierten Pfad (Host-Helfer/Socket/Sudoers) oder eine
+  Entkopplung wie beim Tick-Intervall (State-Datei statt Timer). Enger Nachbar
+  von C3.
 
 ### D — Ops & Observability
 

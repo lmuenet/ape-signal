@@ -104,3 +104,15 @@ Niveau hinaus bewegt. Konservativ: ein nicht nachweisbarer Spike füllt nicht.
 Market-artige Ausführungen (Market-Entry, Stop, manueller Close, Liquidation)
 slippen einen halben Spread gegen den Trade; jede Ausführung unter 500 Nominal
 kostet eine Ordergebühr (Smartbroker+-Schema) — die Simulation schönt nicht.
+
+### Konfiguration (Self-Host)
+Zwei beim Setup gesetzte Stellschrauben in `/etc/ape-signal.env`, vom
+systemd-Kern gelesen (nicht im UI-Container): **`APE_LANGUAGE`** (`de`|`en`,
+Default `de`) steuert die Sprache aller KI-Freitexte (JSON-Keys/Enums bleiben
+englisch). **`SESSION`** (`us`|`xetra`, + Overrides `SESSION_OPEN/CLOSE/
+KUER_SCAN`, `TICK_INTERVAL_MIN`) definiert das Handelsfenster; daraus erzeugt
+`npm run gen-timers` die systemd-Timer. Das effektive Tick-Intervall ist ein
+Laufzeit-Wert (State-Datei `data/tickInterval.json`), live per Telegram
+`/ticker N` anpassbar; der Tick-Timer feuert minuetlich, die Pipeline drosselt
+auf das Intervall, bevor TradingView abgefragt wird. Ungueltige Werte lassen
+den Dienst beim Start hart fehlschlagen; `npm run doctor` zeigt beide aktiv.
