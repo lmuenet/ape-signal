@@ -148,6 +148,27 @@ Zwei zu trennende Ursachen:
 #   → Startzeit des Scans vs. Zeitstempel 'Kandidatenkür done' = echte Kettenlatenz
 ```
 
+### Messung 2026-06-16 (VPS-Logs) — Latenz bestätigt, kein TZ-Problem
+
+`timedatectl`: Host sauber auf `Europe/Berlin` (CEST), NTP aktiv → **keine
+Uhr-/Zeitzonen-Drift**. Timer feuern korrekt (PreUS 15:15). Die `journalctl`
+der PreUS-Unit zeigt die wahre Ursache:
+
+```
+15:15:00  Scan-Start
+15:17:57  [scan] PreUS report sent.      → Scan selbst nur ~3 min
+16:42:40  [scan] Kandidatenkür done.     → Kür allein ~85 min
+```
+
+Bei nur „4min 25s CPU time" sind die ~85 min fast komplett **LLM-Wartezeit**
+(Research+WebSearch → Debatte → Entscheidung). Order geht ~1h12 nach Open raus.
+
+**ZUERST instrumentieren (Session-2-Vorarbeit, vor jedem Timer-Tuning):**
+feinere Log-Zeitstempel pro Kür-Stufe (Research / Debatte / Entscheidung), um
+zu sehen, WO die 85 min liegen — viele sequentielle WebSearches? `/last30days`?
+**Throttling am 5h-Subscription-Limit (→ D1)?** Erst messen, dann fixen, sonst
+behandeln wir nur das Symptom.
+
 ### Lösungsoptionen (in der Brainstorming-Runde wägen)
 
 1. **PreUS-Scan vorziehen** (z. B. 14:30), damit die Kette **vor** 15:30 Open
