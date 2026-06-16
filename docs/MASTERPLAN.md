@@ -246,6 +246,28 @@ LLM-Kosten/-Limit (D1), und Abgrenzung zum deterministischen Monitor-Tick.
 Opportunismus-Schleife ist ein eigener Backlog-Punkt (**B4**, s. u.), sinnvoll
 **nach** B1 (Daten) + B2 (EMA-8-Analyse als Signalgeber).
 
+## 3c. Finding E — Claude-Health über Telegram (D1 konkretisiert, Nutzer 2026-06-16)
+
+Nutzerwunsch: **Telegram-Updates zum Claude-Zustand.** Konkret zwei Auslöser:
+1. **Antwort bleibt lange aus** (Aufruf hängt/dauert ungewöhnlich) →
+   Telegram-Hinweis statt stiller Funkstille.
+2. **Keine Antwort wegen Usage** (5h-Subscription-Limit greift) → explizite
+   Meldung „Claude limitiert", nicht einfach kein Trade.
+
+Direkter Bezug zu Finding B: Die ~85-min-Kür-Latenz ist verdächtig nach genau
+diesem Throttling. **Instrumentierung (Finding B) und Health-Alert (D1) gehören
+zusammen** — die Stufen-Zeitstempel liefern die Schwelle für „dauert zu lange",
+und der Limit-/Fehlerpfad des Claude-Runners liefert das „keine Antwort wegen
+Usage"-Signal. Umsetzungsskizze für die D1-Brainstorming-Runde:
+- **Erkennung:** Laufzeit pro Claude-Call gegen ein Timeout/Schwelle messen;
+  HTTP-429 / Limit-Header bzw. Runner-Fehler abfangen (heute degradiert die Kür
+  still — `select.ts` loggt nur nach stderr).
+- **Anzeige:** Telegram-Nachricht (z. B. „⚠️ Mr Ape: Claude antwortet seit Xmin
+  nicht / ist limitiert"), abgegrenzt von der bestehenden Degradations-/
+  Lebenszeichen-Logik.
+- **Verortung:** zieht D1 in der Priorität nach vorn; sinnvoll **mit/direkt
+  nach** der Session-2-Instrumentierung umzusetzen.
+
 ## 4. Konsolidierte Backlog-Reihenfolge (neu)
 
 | # | Punkt | Status / Abhängigkeit |
@@ -261,7 +283,7 @@ Opportunismus-Schleife ist ein eigener Backlog-Punkt (**B4**, s. u.), sinnvoll
 | 8 | **C2 Mr-Ape-Chat read-only** | Listener muss Dialog persistieren |
 | 9 | **C4 Session/Tick-Verwaltung im UI** | privilegierter Host-Pfad nötig |
 | 10 | **C3 Setup-Assistent** | erst bei realem Public-Self-Host |
-| 11 | **D1 Claude-Health-Check** | quer, einschiebbar bei Limit-Blindheit |
+| 11 | **D1 Claude-Health-Check + Telegram-Alert (Finding E)** | vorgezogen: mit/nach Session-2-Instrumentierung; Telegram-Hinweis bei langer/ausbleibender Antwort + Usage-Limit |
 
 ### Vorgeschlagene Session-Sequenz
 
