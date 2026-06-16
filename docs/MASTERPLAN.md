@@ -171,6 +171,21 @@ auf den **handlungsnahen** Schleifen liegen:
 
 > **Trading · Auswahl (Kür) · Wake-Up · Analyse · Chancen/Opportunismus**
 
+**Update 2026-06-16 (verifiziert):** Die **Kür ist gegen die StockTwits-
+Weirdness immun** — StockTwits speist NICHT die Kür. Kür-Kurse kommen aus dem
+TradingView-Scanner (`paper/quotes.ts`), die `scanSummary` aus
+ApeWisdom/TradingView-Trend/Reddit/Earnings, die Research aus WebSearch.
+StockTwits wird nur von den On-Demand-Telegram-Pfaden genutzt
+(`listener.ts`/`strategy.ts`/`marketData.ts`). Daher: **Trending-Rückbau
+gefahrlos verschoben** (Reihenfolge unten angepasst), die StockTwits-Daten-
+qualität ist ein separater Punkt fürs Datenqualitäts-Bucket (B1/On-Demand).
+
+Wenn der Rückbau drankommt, gilt der entschiedene Scope **„Report weg, Daten
+bleiben"**: PreOpen-Scan (08:45) abschalten, PreUS-Scan (15:15) läuft weiter,
+sendet aber keinen Trending-Report mehr (gathert nur die Kür-Datenbasis).
+Umsetzung über ein `sendReport`-Flag in `runScan` (Default `true` für manuelle
+Scans), PreUS ruft mit `sendReport:false`.
+
 Konkret:
 - **B3 wird zu „Trending abschalten"** (statt „überarbeiten"). Klären: nur den
   Trending-**Report** killen, oder auch Teile der Scan-Pipeline, die nur für
@@ -229,12 +244,17 @@ Opportunismus-Schleife ist ein eigener Backlog-Punkt (**B4**, s. u.), sinnvoll
 
 ### Vorgeschlagene Session-Sequenz
 
-- **Session 1:** C1 deployen (kurz) → dann **B1 Proxy** brainstormen + umsetzen
-  (webshare-Account, `undici`-ProxyAgent, Quellen reaktivieren, Doctor-Check).
-- **Session 2:** **Timing-Fix + B3** zusammen (Trending raus verkürzt die Kette;
-  Scan vorziehen und/oder Limit-Orders) — schneller spürbarer Effekt.
-- **Session 3:** **B2 EMA 8** auf den jetzt sauberen Candles.
-- **Danach:** C1-Embed, agent-reach-Anreicherung, C2/C4, D1 nach Bedarf.
+- **Session 1 (diese):** Masterplan (✓), Proxy-Recherche (✓). Trending-Rückbau
+  bewusst **verschoben** (Kür ist StockTwits-immun). Offen zum Abschluss:
+  C1-Deploy verifizieren + **VPS-Timing diagnostizieren** (SSH) als Datenbasis
+  für den Fix.
+- **Session 2:** **Timing-Fix** (Scan vorziehen und/oder Limit-Orders, ggf. Kür
+  entkoppeln) — kleiner, spürbarer Effekt. B3-Rückbau optional gleich mit
+  (verkürzt die Kette).
+- **Session 3:** **B1 Proxy** brainstormen + umsetzen (webshare/IPRoyal-Account,
+  `undici`-ProxyAgent, Quellen reaktivieren, Doctor-Check).
+- **Session 4:** **B2 EMA 8** auf den jetzt sauberen Candles.
+- **Danach:** B4 Intraday-Opportunismus, C1-Embed, agent-reach, C2/C4, D1.
 
 ---
 
