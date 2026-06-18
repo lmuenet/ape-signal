@@ -8,7 +8,8 @@ import { placeOrders, tradesPlacedToday } from "./engine";
 import { formatKuer, renderPortfolio, renderQuotes } from "./format";
 import { buildDebatePrompt, buildDecisionPrompt, buildDossierPrompt } from "./prompts";
 import { parseDebate, parseDecision, parseDossier, type Debate, type Dossier } from "./decision";
-import { GUARDRAILS, type Portfolio, type QuoteMap } from "./types";
+import { GUARDRAILS, type Portfolio, type QuoteMap, type WatchlistEntry, type WatchlistState } from "./types";
+import { seedWatchlist } from "./watchlist";
 import type { KuerArtifact } from "./kuerArtifact";
 import type { Language } from "../core/language";
 import { ClaudeError } from "../claude/invoke";
@@ -28,6 +29,8 @@ export interface KuerDeps {
   send: (text: string) => Promise<void>;
   /** Persist the day's Kür artifact (Kür-Ansicht spec). Failures must not break the Kür. */
   saveKuer: (artifact: KuerArtifact) => void;
+  /** Seed the intraday Setup-Radar watchlist (Stufe 2). Optional; failures must not break the Kür. */
+  saveWatchlist?: (state: WatchlistState) => void;
   now?: () => Date;
   berlinDay: (d: Date) => string;
   language?: Language;
@@ -61,6 +64,28 @@ function trySaveKuer(deps: KuerDeps, artifact: KuerArtifact): void {
     deps.saveKuer(artifact);
   } catch (err) {
     console.error(`[kuer] saving artifact failed: ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
+
+/**
+ * Seed the intraday Setup-Radar watchlist (Stufe 2) from the dossier candidates
+ * that were NOT turned into a trade today (and are not already held). Best-effort:
+ * a failure must never break the Kür.
+ */
+function trySeedWatchlist(
+  deps: KuerDeps,
+  day: string,
+  dossier: Dossier | null,
+  tradedTickers: Set<string>,
+): void {
+  if (!deps.saveWatchlist) return;
+  const entries: WatchlistEntry[] = (dossier?.candidates ?? [])
+    .filter((c) => !tradedTickers.has(c.ticker.toUpperCase()))
+    .map((c) => ({ ticker: c.ticker, note: c.angle || c.catalyst || "", addedDay: day, firedKinds: [] }));
+  try {
+    deps.saveWatchlist(seedWatchlist(day, entries));
+  } catch (err) {
+    console.error(`[kuer] seeding watchlist failed: ${err instanceof Error ? err.message : String(err)}`);
   }
 }
 
@@ -169,6 +194,12 @@ export async function runKuer(opts: KuerOptions, deps: KuerDeps): Promise<void> 
   });
   portfolio = updated;
   deps.savePortfolio(portfolio);
+
+  const tradedTickers = new Set<string>([
+    ...accepted.map((o) => o.ticker),
+    ...portfolio.positions.map((p) => p.ticker),
+  ]);
+  trySeedWatchlist(deps, day, dossier, tradedTickers);
 
   trySaveKuer(deps, {
     day,

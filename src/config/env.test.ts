@@ -55,6 +55,12 @@ describe("optional finnhub + reddit-crawl flag", () => {
     expect(cfg.redditCrawlEnabled).toBe(false);
   });
 
+  it("intraday opportunism (Stufe 3) defaults OFF and honours the flag", () => {
+    const base = { TELEGRAM_BOT_TOKEN: "t", TELEGRAM_CHAT_ID: "c" };
+    expect(loadEnv(base).intradayOpportunismEnabled).toBe(false);
+    expect(loadEnv({ ...base, ENABLE_INTRADAY_OPPORTUNISM: "1" }).intradayOpportunismEnabled).toBe(true);
+  });
+
   it("requireFinnhub throws when key missing", () => {
     const cfg = loadEnv({ TELEGRAM_BOT_TOKEN: "t", TELEGRAM_CHAT_ID: "c" });
     expect(() => requireFinnhub(cfg)).toThrow(/FINNHUB_API_KEY/);

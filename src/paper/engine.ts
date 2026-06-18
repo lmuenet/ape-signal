@@ -14,7 +14,18 @@ import {
   type TickEvent,
   type TickQuote,
   type TradeDecision,
+  type TradeSource,
 } from "./types";
+
+/**
+ * Add `n` calendar days to a Berlin trading-day string (YYYY-MM-DD). Pure date
+ * arithmetic on the date itself (UTC midnight) — no timezone drift, since the
+ * input is already a plain Berlin date. Used for multi-day order expiry (TTL).
+ */
+export function addBerlinDays(day: string, n: number): string {
+  const ms = Date.parse(`${day}T00:00:00Z`) + n * 86_400_000;
+  return new Date(ms).toISOString().slice(0, 10);
+}
 
 /** P&L of a position at a price, capped at -stake (margin is the max loss). */
 export function positionPnl(pos: Position, price: number): number {
@@ -100,6 +111,7 @@ function closeTrade(
       reason,
       openedAt: pos.openedAt,
       closedAt: now,
+      source: pos.source,
     },
     exitFee,
   };
@@ -134,9 +146,19 @@ export function applyTick(p: Portfolio, quotes: QuoteMap, opts: TickOptions): Ti
   const history = [...p.history];
   const orders: EntryOrder[] = [];
   const openedThisTick = new Set<string>();
+  // Ladder rungs that already filled THIS tick — their siblings get cancelled,
+  // never double-entered (Stufe 1 mutual-cancel).
+  const filledGroups = new Set<string>();
 
   // 1) Entry orders: fill or (at the closing tick) expire.
   for (const order of p.orders) {
+    // A sibling rung of this order's ladder already filled this tick → cancel it
+    // (refund the reserved stake), even without a quote.
+    if (order.rungGroup && filledGroups.has(order.rungGroup)) {
+      balance += order.stake;
+      events.push({ kind: "order-expired", order });
+      continue;
+    }
     const q = quotes[order.ticker];
     if (q) {
       const prev = prevQuotes[order.ticker];
@@ -148,6 +170,7 @@ export function applyTick(p: Portfolio, quotes: QuoteMap, opts: TickOptions): Ti
             ? order.limitPrice!
             : null;
       if (fillPrice !== null && fillPrice > 0) {
+        if (order.rungGroup) filledGroups.add(order.rungGroup);
         const entryFee = executionFee(order.stake * order.leverage);
         balance -= entryFee;
         const position: Position = {
@@ -165,6 +188,7 @@ export function applyTick(p: Portfolio, quotes: QuoteMap, opts: TickOptions): Ti
           openedAt: opts.now,
           thesis: order.thesis,
           fees: entryFee,
+          source: order.source,
         };
         positions.push(position);
         openedThisTick.add(position.id);
@@ -172,11 +196,23 @@ export function applyTick(p: Portfolio, quotes: QuoteMap, opts: TickOptions): Ti
         continue;
       }
     }
-    if (opts.isClose && order.day <= opts.day) {
+    if (opts.isClose && (order.expiresOn ?? order.day) <= opts.day) {
       balance += order.stake; // release the reserved margin
       events.push({ kind: "order-expired", order });
     } else {
       orders.push(order);
+    }
+  }
+
+  // Second pass: a rung kept earlier in this loop whose sibling filled later must
+  // still be cancelled (placement order need not match price order).
+  const survivingOrders: EntryOrder[] = [];
+  for (const o of orders) {
+    if (o.rungGroup && filledGroups.has(o.rungGroup)) {
+      balance += o.stake;
+      events.push({ kind: "order-expired", order: o });
+    } else {
+      survivingOrders.push(o);
     }
   }
 
@@ -229,7 +265,7 @@ export function applyTick(p: Portfolio, quotes: QuoteMap, opts: TickOptions): Ti
       ...p,
       balance,
       positions: remaining,
-      orders,
+      orders: survivingOrders,
       history,
       lastTick: { at: opts.now, day: opts.day, quotes },
     },
@@ -247,7 +283,7 @@ export function expireDayOrders(p: Portfolio, day: string): TickOutcome {
   const events: TickEvent[] = [];
   let balance = p.balance;
   const orders = p.orders.filter((order) => {
-    if (order.day <= day) {
+    if ((order.expiresOn ?? order.day) <= day) {
       balance += order.stake; // release the reserved margin
       events.push({ kind: "order-expired", order });
       return false;
@@ -278,6 +314,18 @@ export function tradesPlacedToday(p: Portfolio, day: string): number {
 }
 
 /**
+ * Count today's trades that came from the gated intraday opportunism loop
+ * (source === "intraday") — the separate Stufe-3 budget tier, distinct from the Kür.
+ */
+export function intradayTradesPlacedToday(p: Portfolio, day: string): number {
+  return (
+    p.orders.filter((o) => o.source === "intraday" && o.day === day).length +
+    p.positions.filter((pos) => pos.source === "intraday" && pos.openedAt.startsWith(day)).length +
+    p.history.filter((t) => t.source === "intraday" && t.openedAt.startsWith(day)).length
+  );
+}
+
+/**
  * Validate Mr Ape's Kür decisions against the balanced guardrails and reserve
  * the stakes. Leverage is clamped to [1, max]; the stake is clamped to the
  * 20%-of-equity cap and the free balance. Structurally broken decisions
@@ -288,7 +336,7 @@ export function placeOrders(
   p: Portfolio,
   decisions: TradeDecision[],
   quotes: QuoteMap,
-  opts: { now: string; day: string },
+  opts: { now: string; day: string; source?: TradeSource },
 ): PlacementResult {
   const accepted: EntryOrder[] = [];
   const rejected: PlacementResult["rejected"] = [];
@@ -324,6 +372,11 @@ export function placeOrders(
     const wakeAbove = typeof d.wakeAbove === "number" && d.wakeAbove > reference ? d.wakeAbove : undefined;
     const wakeBelow = typeof d.wakeBelow === "number" && d.wakeBelow > 0 && d.wakeBelow < reference ? d.wakeBelow : undefined;
 
+    // Multi-day TTL (Stufe 1): clamp to [1, max]; only future-dated orders carry
+    // an expiresOn — same-day orders stay undefined (= today, the existing behaviour).
+    const ttlDays = Math.min(Math.max(Math.round(d.ttlDays ?? 1) || 1, 1), GUARDRAILS.maxTtlDays);
+    const expiresOn = ttlDays > 1 ? addBerlinDays(opts.day, ttlDays - 1) : undefined;
+
     const order: EntryOrder = {
       id: `${ticker}-${opts.day}-${placedBefore + accepted.length + 1}`,
       ticker,
@@ -336,6 +389,8 @@ export function placeOrders(
       takeProfit: d.takeProfit,
       wakeAbove,
       wakeBelow,
+      expiresOn,
+      source: opts.source,
       thesis: d.thesis ?? "",
       createdAt: opts.now,
       day: opts.day,
@@ -345,7 +400,31 @@ export function placeOrders(
     budget -= 1;
   });
 
-  return { portfolio, accepted, rejected };
+  // Ladder rungs (Stufe 1): ≥2 accepted LIMIT orders on the same ticker+side placed
+  // in THIS call are rungs of one conviction → shared rungGroup (one fills, the engine
+  // cancels the rest). Keyed by order id so pre-existing same-ticker orders are never
+  // retroactively grouped.
+  const limitCounts = new Map<string, number>();
+  for (const o of accepted) {
+    if (o.entryType !== "limit") continue;
+    const key = `${o.ticker}|${o.side}`;
+    limitCounts.set(key, (limitCounts.get(key) ?? 0) + 1);
+  }
+  const rungGroupById = new Map<string, string>();
+  for (const o of accepted) {
+    if (o.entryType === "limit" && (limitCounts.get(`${o.ticker}|${o.side}`) ?? 0) >= 2) {
+      rungGroupById.set(o.id, `${o.ticker}-${o.side}-${opts.day}-ladder`);
+    }
+  }
+  if (rungGroupById.size === 0) return { portfolio, accepted, rejected };
+
+  const withGroup = (o: EntryOrder): EntryOrder =>
+    rungGroupById.has(o.id) ? { ...o, rungGroup: rungGroupById.get(o.id) } : o;
+  return {
+    portfolio: { ...portfolio, orders: portfolio.orders.map(withGroup) },
+    accepted: accepted.map(withGroup),
+    rejected,
+  };
 }
 
 export interface AdjustmentResult {

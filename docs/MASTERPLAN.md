@@ -259,6 +259,24 @@ LLM-Kosten/-Limit (D1), und Abgrenzung zum deterministischen Monitor-Tick.
 Opportunismus-Schleife ist ein eigener Backlog-Punkt (**B4**, s. u.), sinnvoll
 **nach** B1 (Daten) + B2 (EMA-8-Analyse als Signalgeber).
 
+**Beschluss 2026-06-18 — gestaffeltes Modell (Brainstorm
+`docs/superpowers/brainstorms/2026-06-18-intraday-opportunismus.md`).** Verifikations-
++ Jury-Runde über 4 Architekturen. Ergebnis: **keine** schwere parallele „Zwischenscans →
+Kür → Order"-Pipeline zuerst (sie multipliziert genau das 5h-Limit-Problem aus Finding B/E),
+sondern die bestehende deterministische Maschinerie generalisieren:
+- **Stufe 1 (zuerst, S-Effort, null neue LLM-Calls):** **Limit-Leiter aus der Kür**
+  (1–3 trendgesteuerte Rungs, Engine füllt über 1–2 h) **+ mehrtägiges Order-TTL**
+  (`ttlDays`; Engine trägt future-dated Orders bereits — Test `engine.test.ts:427`)
+  **+ Prompt-Schärfung „Limit statt Market"**. Löst Finding B (Late-Fill) gleich mit;
+  erfasst ~75–85 % des Ziels. Das ist die wörtliche Nutzer-Intuition „angepasste Orders".
+- **Stufe 2 (low effort, null LLM):** **Setup-Radar** — kleine, einmal täglich geseedete
+  Watchlist (Kür-Tail + rsScreener-Momentum), close-basierte deterministische Trigger
+  (EMA-Cross/RSI-Extrem), die nach Telegram **melden statt automatisch zu handeln**
+  (human-in-loop via `/strategie`/künftig `/trade`).
+- **Stufe 3 (später, opt-in, gegated):** aktive Eröffnung (Manager-darf-öffnen / leichte
+  Zwischen-Kür) — nur mit **separatem Intraday-Budget-Tier** + harten Guardrails +
+  limit-aware Research/Debatte. Hohes Disziplin-/Limit-Risiko → bewusst zuletzt.
+
 ## 3c. Finding E — Claude-Health über Telegram (D1 konkretisiert, Nutzer 2026-06-16)
 
 Nutzerwunsch: **Telegram-Updates zum Claude-Zustand.** Konkret zwei Auslöser:
@@ -290,7 +308,7 @@ Usage"-Signal. Umsetzungsskizze für die D1-Brainstorming-Runde:
 | 2 | **Timing-Fix (Finding B)** | Instrumentierung ✓ (2026-06-18); Timer-Vorziehen/Limit-Orders noch offen |
 | 3 | **B3 Trending abschalten + Refokus (Finding C)** | verkürzt Kette, schärft Fokus |
 | 4 | **B2 EMA-Signal** | Trend-Read EMA10/20/50 ✓ (2026-06-18, ohne Proxy); exaktes EMA 8 braucht Candles (B1) |
-| 5 | **B4 Intraday-Opportunismus (Finding D)** | Limit-Orders sofort (mit Timing-Fix); aktive Schleife nach B1+B2 |
+| 5 | **B4 Intraday-Opportunismus (Finding D)** | gestaffelt (Beschluss 2026-06-18), **alle drei Stufen umgesetzt** (Branch `feat/intraday-opportunismus-staffelung`): **Stufe 1** Limit-Leiter + TTL + Prompt ✓ (null LLM) · **Stufe 2** Setup-Radar (deterministische Watchlist-Trigger → Telegram, null LLM) ✓ · **Stufe 3** aktive Eröffnung ✓ **gegated** hinter `ENABLE_INTRADAY_OPPORTUNISM` (Default OFF), eigenes Budget-Tier, nur Limit, keine Dopplung |
 | 6 | **C1 Embed/Refresh** | braucht B1 |
 | 7 | **agent-reach Recherche-Anreicherung** | optional, nach B1; Cookie-/VPS-Betrieb klären |
 | 8 | **C2 Mr-Ape-Chat read-only** | Listener muss Dialog persistieren |

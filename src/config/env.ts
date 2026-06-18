@@ -7,6 +7,8 @@ export interface Env {
   finnhubApiKey?: string;
   redditCrawlEnabled: boolean;
   paperTradingEnabled: boolean;
+  /** Stufe 3: gated intraday opportunism opening. Default OFF (Setup-Radar still alerts). */
+  intradayOpportunismEnabled: boolean;
   redditClientId?: string;
   redditClientSecret?: string;
   redditUserAgent?: string;
@@ -53,6 +55,7 @@ export function loadEnv(source: Record<string, string | undefined> = process.env
     finnhubApiKey: val(source, "FINNHUB_API_KEY"),
     redditCrawlEnabled: truthy(source.ENABLE_REDDIT_CRAWL),
     paperTradingEnabled: truthy(source.ENABLE_PAPER_TRADING),
+    intradayOpportunismEnabled: truthy(source.ENABLE_INTRADAY_OPPORTUNISM),
     redditClientId: val(source, "REDDIT_CLIENT_ID"),
     redditClientSecret: val(source, "REDDIT_CLIENT_SECRET"),
     redditUserAgent: val(source, "REDDIT_USER_AGENT"),

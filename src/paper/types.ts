@@ -40,7 +40,20 @@ export interface EntryOrder {
   wakeBelow?: number;
   thesis: string;
   createdAt: string; // ISO
-  day: string; // Berlin trading day (YYYY-MM-DD) — expiry day
+  day: string; // Berlin trading day (YYYY-MM-DD) — creation day, counts towards the daily budget
+  /**
+   * Berlin day (YYYY-MM-DD) the order expires at its Close tick. Absent → same-day
+   * (= `day`). A multi-day order (ttlDays > 1) sits beyond `day` but still counts
+   * towards the budget on its `day` only (see tradesPlacedToday).
+   */
+  expiresOn?: string;
+  /**
+   * Mutually-exclusive ladder group (Stufe 1): orders sharing this id are rungs of
+   * one conviction — when one fills, the engine cancels the others (never double-enters).
+   */
+  rungGroup?: string;
+  /** Where the order originated. Absent → "kuer" (the daily Kandidatenkür). */
+  source?: TradeSource;
 }
 
 /** An open CFD-style position: notional = stake × leverage. */
@@ -61,7 +74,12 @@ export interface Position {
   thesis: string;
   /** Execution fees paid so far (entry leg). Missing in pre-cost depots. */
   fees?: number;
+  /** Where the position originated. Absent → "kuer" (the daily Kandidatenkür). */
+  source?: TradeSource;
 }
+
+/** Where a trade originated: the daily Kür, or the gated intraday opportunism loop. */
+export type TradeSource = "kuer" | "intraday";
 
 export type CloseReason = "stop" | "take-profit" | "liquidation" | "manual" | "expired";
 
@@ -79,6 +97,8 @@ export interface ClosedTrade {
   reason: Exclude<CloseReason, "expired">;
   openedAt: string;
   closedAt: string;
+  /** Where the trade originated. Absent → "kuer". Carried for the intraday budget tier. */
+  source?: TradeSource;
 }
 
 export interface Portfolio {
@@ -101,6 +121,10 @@ export const GUARDRAILS = {
   /** Max stake per trade as a fraction of current equity (play-money depot). */
   maxStakeFraction: 0.2,
   maxTradesPerDay: 3,
+  /** Max trading days an entry order may stay valid (Stufe 1 multi-day TTL). */
+  maxTtlDays: 5,
+  /** Separate daily budget tier for the gated intraday opportunism loop (Stufe 3). */
+  maxIntradayTrades: 1,
 } as const;
 
 /**
@@ -137,6 +161,8 @@ export interface TradeDecision {
   takeProfit?: number;
   wakeAbove?: number;
   wakeBelow?: number;
+  /** Trading days the order stays valid (1–5, default 1 = today only). Stufe 1. */
+  ttlDays?: number;
   thesis: string;
 }
 
@@ -155,4 +181,36 @@ export type TickEvent =
 
 export function freshPortfolio(startBalance: number): Portfolio {
   return { balance: startBalance, positions: [], orders: [], history: [] };
+}
+
+/** A deterministic intraday setup the Setup-Radar can fire on (Stufe 2). Close-based only. */
+export type SetupKind = "ema-cross-up" | "ema-cross-down" | "rsi-overbought" | "rsi-oversold";
+
+/** A fired setup trigger for a watched (non-held) ticker. */
+export interface SetupTrigger {
+  ticker: string;
+  kind: SetupKind;
+  price: number;
+  note: string;
+}
+
+/** One non-held ticker the Kür flagged as worth watching intraday (Stufe 2). */
+export interface WatchlistEntry {
+  ticker: string;
+  /** Directional bias from the dossier, if any. */
+  side?: Side;
+  /** Why it is watched (dossier angle/catalyst) — shown in the alert. */
+  note: string;
+  /** Berlin day this entry was seeded. */
+  addedDay: string;
+  /** Setup kinds already fired+posted today (consumed once per kind per day). */
+  firedKinds: SetupKind[];
+}
+
+/** The intraday watchlist for one Berlin day (Stufe 2). Reseeded each Kür. */
+export interface WatchlistState {
+  day: string;
+  entries: WatchlistEntry[];
+  /** Previous watchlist tick's quotes — the baseline for cross detection. */
+  lastQuotes?: QuoteMap;
 }

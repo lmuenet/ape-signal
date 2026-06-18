@@ -15,12 +15,19 @@ twice-daily, Telegram-delivered trading briefing — all under your own Claude
 - **On-demand strategy** — reply `/strategie TICKER [profile]` on Telegram for a
   deep single-stock analysis.
 - **Paper trading "Mr Ape"** (opt-in, `ENABLE_PAPER_TRADING=1`) — a simulated
-  CFD-style depot. After the PreUS scan the LLM picks up to 3 trade candidates;
-  a 5-minute monitor tick checks fills/stops deterministically against
-  TradingView quotes, and the LLM manager is woken only by fills, breached
-  wake-up bands or the close (ADR 0003). Every manager decision is posted to
-  Telegram; a daily close summary and an append-only trading journal complete
-  the picture (`/journal` to read or talk to it). No real orders, ever.
+  CFD-style depot. After the PreUS scan the LLM picks up to 3 trade candidates
+  (as patient, possibly multi-day **limit ladders**, not market entries); a
+  5-minute monitor tick checks fills/stops deterministically against TradingView
+  quotes, and the LLM manager is woken only by fills, breached wake-up bands or
+  the close (ADR 0003). Every manager decision is posted to Telegram; a daily
+  close summary and an append-only trading journal complete the picture
+  (`/journal` to read or talk to it). No real orders, ever.
+- **Intraday Setup-Radar** — non-traded candidates from the Kür become a daily
+  watchlist; each monitor tick checks deterministic, close-based triggers
+  (EMA10×EMA20 cross, RSI extremes from the scanner columns) and **alerts** them
+  on Telegram. With `ENABLE_INTRADAY_OPPORTUNISM=1` (off by default) a fired
+  trigger may also open **one** intraday limit order in a separate budget tier —
+  gated, limit-only, never doubling down on a held ticker.
 
 `ape-intel` is embedded as a git submodule at `vendor/ape-intel` (shared data
 fetchers); `claude -p` runs the reasoning locally under your subscription.

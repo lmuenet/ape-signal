@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { runKuer, type KuerDeps } from "./select";
 import { berlinDay } from "./store";
-import { freshPortfolio, type Portfolio, type QuoteMap } from "./types";
+import { freshPortfolio, type Portfolio, type QuoteMap, type WatchlistState } from "./types";
 import type { KuerArtifact } from "./kuerArtifact";
 import { ClaudeLimitError, ClaudeTimeoutError } from "../claude/invoke";
 
@@ -176,6 +176,36 @@ describe("runKuer", () => {
     await runKuer({ scanSummary: "" }, deps);
     expect(deps.researchRunner).not.toHaveBeenCalled();
     expect(sent).toHaveLength(0);
+  });
+
+  it("seeds the Setup-Radar watchlist with non-traded dossier candidates (Stufe 2)", async () => {
+    const watchSaves: WatchlistState[] = [];
+    const twoCandidates = JSON.stringify({
+      candidates: [
+        { ticker: "NVDA", angle: "Long Momentum", catalyst: "Earnings", sentiment: "x" },
+        { ticker: "AMD", angle: "Pullback-Kauf bei EMA20", catalyst: "Sympathy", sentiment: "y" },
+      ],
+      marketContext: "",
+    });
+    const { deps } = makeDeps(freshPortfolio(1000), quotes, {
+      researchRunner: vi.fn(async () => twoCandidates),
+      saveWatchlist: (s) => watchSaves.push(s),
+    });
+    await runKuer({ scanSummary: "" }, deps);
+    expect(watchSaves).toHaveLength(1);
+    expect(watchSaves[0].day).toBe(DAY);
+    expect(watchSaves[0].entries.map((e) => e.ticker)).toEqual(["AMD"]); // NVDA was traded
+    expect(watchSaves[0].entries[0].note).toContain("Pullback");
+  });
+
+  it("a saveWatchlist failure never breaks the Kür", async () => {
+    const { deps, sent } = makeDeps(freshPortfolio(1000), quotes, {
+      saveWatchlist: () => {
+        throw new Error("disk full");
+      },
+    });
+    await runKuer({ scanSummary: "" }, deps);
+    expect(sent[0]).toContain("Kandidatenkür");
   });
 
   it("accepts a zero-trade decision and still journals it", async () => {

@@ -106,6 +106,7 @@ export function parseDecision(raw: string): Decision | null {
         takeProfit: numOr(o.takeProfit),
         wakeAbove: numOr(o.wakeAbove),
         wakeBelow: numOr(o.wakeBelow),
+        ttlDays: numOr(o.ttlDays),
         thesis: str(o.thesis),
       };
     })

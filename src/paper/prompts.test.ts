@@ -43,9 +43,37 @@ describe("buildDecisionPrompt", () => {
     expect(p).toContain("wakeAbove");
     expect(p).toContain("Wake-Up-Band");
   });
+
+  it("steers towards laddered limit entries and multi-day TTL (Stufe 1)", () => {
+    const p = buildDecisionPrompt({
+      day: "2026-06-11", dossierBlock: "", debateBlock: "", quotesBlock: "",
+      portfolioBlock: "", journalTail: "",
+    });
+    expect(p).toContain("BEVORZUGE Limit-Einstiege");
+    expect(p).toContain("LEITER");
+    expect(p).toContain("ttlDays");
+  });
 });
 
-import { buildAdminPrompt, buildDossierPrompt } from "./prompts";
+import { buildAdminPrompt, buildDossierPrompt, buildIntradayPrompt } from "./prompts";
+
+describe("buildIntradayPrompt (Stufe 3)", () => {
+  const base = {
+    stamp: "2026-06-09 17:00", ticker: "AMD", triggerLabel: "EMA10×EMA20 ↑ — Pullback",
+    price: 100, portfolioBlock: "(depot)", quotesBlock: "(quotes)", journalTail: "",
+  };
+  it("states the trigger, the limit-only rule and the one-trade cap", () => {
+    const p = buildIntradayPrompt(base);
+    expect(p).toContain("AMD @ 100");
+    expect(p).toContain("EMA10×EMA20 ↑");
+    expect(p).toContain("NUR Limit");
+    expect(p).toContain("GENAU EINE Order");
+  });
+  it("honours the language flag", () => {
+    expect(buildIntradayPrompt({ ...base, language: "en" })).toContain("ENGLISCH");
+    expect(buildIntradayPrompt(base)).toContain("DEUTSCH");
+  });
+});
 
 describe("prompt language label", () => {
   it("decision prompt defaults to a German free-text directive", () => {

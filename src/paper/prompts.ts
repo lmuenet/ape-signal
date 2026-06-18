@@ -139,13 +139,27 @@ export function buildDecisionPrompt(input: DecisionPromptInput): string {
     "## Dein Journal (letzte Einträge)",
     input.journalTail.trim() === "" ? "(noch leer)" : input.journalTail,
     "",
+    "## Einstiegs-Taktik (Opportunismus statt Markt-zum-Open)",
+    "- BEVORZUGE Limit-Einstiege auf konkreten Niveaus (z. B. an EMA20, jüngstem",
+    "  Pullback-Tief, RSI-Rücksetzer) gegenüber Market. So füllt die Order zum richtigen",
+    "  Kurs im Tagesverlauf — nicht erzwungen zum verzögerten Open. Setze Limits leicht",
+    "  gestaffelt (nicht 1 Cent exakt), damit ein knapper Vorbeilauf dich nicht aussperrt.",
+    "- LEITER: Mehrere Limits auf denselben Ticker/dieselbe Seite bilden eine Leiter",
+    "  (liste das einstiegs-NÄCHSTE Niveau zuerst). Füllt eine Rung, verfallen die anderen",
+    "  automatisch — so fängst du einen Pullback, ohne mehrfach einzusteigen. Jede Rung",
+    "  zählt gegen dein Tagesbudget; eine Leiter ist eine konzentrierte Conviction.",
+    "- GEDULD: optional ttlDays (1–5) — wie viele Handelstage die Order gültig bleibt",
+    "  (Default 1 = nur heute). Für ein Setup, das erst in den nächsten Tagen triggert,",
+    "  setze 2–3; vermeide unnötig lange TTL.",
+    "",
     "## Regeln (werden vom System HART erzwungen — Verstöße werden abgelehnt)",
-    `- Max. ${GUARDRAILS.maxTradesPerDay} neue Trades pro Tag (inkl. bereits heute platzierter).`,
+    `- Max. ${GUARDRAILS.maxTradesPerDay} neue Trades pro Tag (inkl. bereits heute platzierter; jede Leiter-Rung zählt einzeln).`,
     `- Einsatz (stake) pro Trade: max. ${GUARDRAILS.maxStakeFraction * 100}% deiner Equity.`,
     `- Hebel (leverage): 1 bis ${GUARDRAILS.maxLeverage}.`,
     "- stopLoss ist PFLICHT und muss auf der Verlustseite des Entry liegen.",
     "- entry: \"market\" (füllt beim nächsten Tick) oder eine Zahl (Limit-Level; füllt, wenn",
-    "  der Kurs es nachweislich berührt). Unausgeführte Orders verfallen zum Handelsschluss.",
+    "  der Kurs es nachweislich berührt). Ohne ttlDays verfällt eine unausgeführte Order zum",
+    `  Handelsschluss; mit ttlDays (1–${GUARDRAILS.maxTtlDays}) bleibt sie entsprechend länger gültig.`,
     "- Verlust ≥ Einsatz wird zwangsliquidiert. Swing-Stil: Haltedauer Tage, kein Daytrading.",
     "- Optional pro Trade: wakeAbove/wakeBelow — ein Wake-Up-Band (weiche Schwellen, die",
     "  dich im Tagesverlauf wecken, ohne zu handeln). Ohne Angabe leitet das System",
@@ -154,12 +168,13 @@ export function buildDecisionPrompt(input: DecisionPromptInput): string {
     "Antworte mit GENAU diesem JSON-Format:",
     "{",
     '  "trades": [',
-    '    { "ticker": "XYZ", "side": "long", "stake": 200, "leverage": 2, "entry": "market", "stopLoss": 95.5, "takeProfit": 120, "wakeAbove": 115, "wakeBelow": 100, "thesis": "1-2 Sätze: warum dieser Trade, warum jetzt" }',
+    '    { "ticker": "XYZ", "side": "long", "stake": 200, "leverage": 2, "entry": 112.5, "stopLoss": 105, "takeProfit": 130, "ttlDays": 2, "wakeAbove": 120, "wakeBelow": 108, "thesis": "1-2 Sätze: warum dieser Trade, warum jetzt" }',
     "  ],",
     '  "journal": "Dein Journal-Eintrag zur heutigen Kür: Marktlage, warum diese Trades (oder keine), was du beobachtest (3-6 Sätze)"',
     "}",
     "",
-    '"side" ∈ long | short. "takeProfit" ist optional. Leeres trades-Array = heute kein Trade.',
+    '"side" ∈ long | short. "entry" = "market" ODER ein Limit-Level (Zahl). "takeProfit" und',
+    '"ttlDays" sind optional. Leeres trades-Array = heute kein Trade.',
     "",
     jsonOnly(input.language ?? "de"),
   ].join("\n");
@@ -219,6 +234,62 @@ export function buildTickPrompt(input: TickPromptInput): string {
     '    { "type": "cancel_order", "orderId": "..." }',
     "  ],",
     '  "journal": "kurze Notiz NUR wenn du etwas geändert hast oder etwas Wichtiges passiert ist, sonst null"',
+    "}",
+    "",
+    jsonOnly(input.language ?? "de"),
+  ].join("\n");
+}
+
+export interface IntradayPromptInput {
+  stamp: string; // Berlin "YYYY-MM-DD HH:mm"
+  ticker: string;
+  triggerLabel: string; // e.g. "EMA10×EMA20 ↑ · RSI 63 — Earnings-Momentum"
+  price: number;
+  portfolioBlock: string;
+  quotesBlock: string;
+  journalTail: string;
+  language?: Language;
+}
+
+/**
+ * Intraday opportunity (Stufe 3, gated, Sonnet): a DETERMINISTIC setup trigger
+ * fired on a watched, non-held ticker. Decide whether to open AT MOST ONE limit
+ * order — or nothing. Disciplined by design: limit-only (no late-fill market),
+ * the thesis must cite the trigger, and "nothing" is a full answer.
+ */
+export function buildIntradayPrompt(input: IntradayPromptInput): string {
+  return [
+    PERSONA,
+    "",
+    `Tick ${input.stamp}. INTRADAY-CHANCE: Ein deterministischer Setup-Trigger ist auf einem`,
+    `beobachteten (nicht gehaltenen) Ticker gefeuert.`,
+    "",
+    `## Trigger`,
+    `${input.ticker} @ ${input.price} — ${input.triggerLabel}`,
+    "",
+    "## Dein Depot",
+    input.portfolioBlock,
+    "",
+    "## Aktuelle Kurse (inkl. EMA10/20/50, RSI, Trend)",
+    input.quotesBlock,
+    "",
+    "## Dein Journal (letzte Einträge)",
+    input.journalTail.trim() === "" ? "(noch leer)" : input.journalTail,
+    "",
+    "## Auftrag & Regeln (hart erzwungen)",
+    `- Entscheide, ob du auf ${input.ticker} GENAU EINE Order setzt — oder NICHTS. Nichts tun ist`,
+    "  eine vollwertige, oft richtige Antwort (kein Zwang zu handeln).",
+    "- NUR Limit-Einstieg: \"entry\" MUSS eine Zahl (Limit-Level) sein, kein \"market\".",
+    "- stopLoss ist PFLICHT auf der Verlustseite. Optional takeProfit/ttlDays/wakeAbove/wakeBelow.",
+    "- Deine these MUSS den Trigger zitieren (warum dieses Setup JETZT einen Trade rechtfertigt).",
+    "- Höchstens 1 Trade; weitere werden ignoriert. Hebel 1–3, Einsatz ≤ 20% Equity.",
+    "",
+    "Antworte mit GENAU diesem JSON-Format (leeres trades-Array = kein Trade):",
+    "{",
+    '  "trades": [',
+    `    { "ticker": "${input.ticker}", "side": "long", "stake": 150, "leverage": 2, "entry": ${input.price}, "stopLoss": 0, "takeProfit": 0, "thesis": "warum jetzt — nenne den Trigger" }`,
+    "  ],",
+    '  "journal": "1-2 Sätze: warum dieser Trade ODER warum du verzichtest"',
     "}",
     "",
     jsonOnly(input.language ?? "de"),

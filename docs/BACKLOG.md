@@ -51,6 +51,14 @@ Erledigt am 2026-06-12: „Stille Degradation härten (Lebenszeichen)" und
   faktisch immer dieselben Ticker und damit wenig Mehrwert; Kür + Paper-Trading
   sind effizienter. Klären: behalten/umbauen/abschalten, und ob der Morgen-
   PreOpen-Scan dabei mitwandert (heute fix 08:45, in A2 bewusst nicht angefasst).
+- **B4 Intraday-Opportunismus (Finding D)** — „nicht nur zum Open suchen".
+  Beschluss 2026-06-18 (Brainstorm
+  `docs/superpowers/brainstorms/2026-06-18-intraday-opportunismus.md`): gestaffelt
+  statt schwere parallele Zwischen-Kür. **Stufe 1** Limit-Leiter aus der Kür +
+  mehrtägiges Order-TTL + Prompt „Limit statt Market" (jetzt machbar, null neue
+  LLM-Calls, löst Finding B mit). **Stufe 2** Setup-Radar (deterministische
+  Watchlist-Trigger → Telegram-Meldung, kein Auto-Trade). **Stufe 3** aktive
+  Eröffnung mit separatem Budget-Tier + Guardrails (gegated, nach B1/B2).
 
 ### C — UI-Ausbau (Depot-UI)
 
