@@ -19,6 +19,30 @@ describe("fetchTickQuotes", () => {
     expect(quotes.TSLA?.low).toBe(195.5);
   });
 
+  it("parses EMA/RSI indicator columns when present", async () => {
+    const quotes = await fetchTickQuotes(["NVDA"], () =>
+      ok({ data: [{ s: "NASDAQ:NVDA", d: ["NVDA", 110, 1.2, 112, 108, 108.5, 105, 100, 62.4] }] }),
+    );
+    expect(quotes.NVDA).toEqual({
+      close: 110,
+      changePct: 1.2,
+      high: 112,
+      low: 108,
+      ema10: 108.5,
+      ema20: 105,
+      ema50: 100,
+      rsi: 62.4,
+    });
+  });
+
+  it("leaves indicator fields absent (not 0) when the scanner omits them", async () => {
+    const quotes = await fetchTickQuotes(["NVDA"], () =>
+      ok({ data: [{ s: "NASDAQ:NVDA", d: ["NVDA", 110, 1.2, 112, 108, null, null, null, null] }] }),
+    );
+    expect(quotes.NVDA).toEqual({ close: 110, changePct: 1.2, high: 112, low: 108 });
+    expect(quotes.NVDA?.ema20).toBeUndefined();
+  });
+
   it("skips unknown symbols and returns {} for no tickers", async () => {
     expect(await fetchTickQuotes([], () => ok({ data: [] }))).toEqual({});
     const quotes = await fetchTickQuotes(["NVDA"], () => ok({ data: [{ d: [null, 1] }] }));

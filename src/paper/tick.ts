@@ -4,7 +4,7 @@
 // dead token never fails silently.
 import { loadEnv } from "../config/env";
 import { createTelegramClient } from "../telegram/client";
-import { createClaudeRunner } from "../claude/invoke";
+import { createClaudeRunner, resolveWatchdog } from "../claude/invoke";
 import { fetchTickQuotes } from "./quotes";
 import { appendTickHistory } from "./tickHistory";
 import { appendJournal, berlinDay, berlinStamp, dataDir, loadPortfolio, readJournalTail, savePortfolio } from "./store";
@@ -23,6 +23,11 @@ async function main(): Promise<void> {
     return;
   }
   const telegram = createTelegramClient({ botToken: env.telegramBotToken, chatId: env.telegramChatId });
+  const onSlow = (info: { label: string; elapsedMs: number }): void => {
+    void telegram
+      .sendMessage(`⏳ Claude: „${info.label}" läuft noch (seit ${Math.round(info.elapsedMs / 60_000)} min) — evtl. ausgelastet/limitiert.`)
+      .catch(() => {});
+  };
   const dir = dataDir();
   const tickIntervalMin = resolveTickInterval(dir, loadSession(process.env).tickIntervalMin);
 
@@ -37,7 +42,7 @@ async function main(): Promise<void> {
       recordTick: (day, atIso, quotes) => appendTickHistory(dir, day, atIso, quotes),
       loadHealth: (day) => loadHealth(dir, day),
       saveHealth: (h) => saveHealth(dir, h),
-      claudeRunner: createClaudeRunner({ model: "sonnet" }),
+      claudeRunner: createClaudeRunner({ model: "sonnet", label: "Manager", onSlow, ...resolveWatchdog(process.env) }),
       send: (text) => telegram.sendMessage(text),
       berlinDay,
       berlinStamp,

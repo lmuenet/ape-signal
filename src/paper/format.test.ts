@@ -48,6 +48,19 @@ describe("formatManagerNote", () => {
   it('returns "" when there is nothing to say', () => {
     expect(formatManagerNote("15:35", "", [], [], [])).toBe("");
   });
+
+  it("always surfaces a band breach, even on a hold with no reason", () => {
+    const msg = formatManagerNote("15:35", "", [], [], [], ["⚡ AAPL: Kurs 111 riss Wake-Band oben (110)"]);
+    expect(msg).toContain("riss Wake-Band oben");
+    expect(msg).toContain("hält die Position");
+  });
+
+  it("pairs the breach with Mr Ape's reason when he gives one", () => {
+    const msg = formatManagerNote("15:35", "Halte — Trend intakt.", [], [], [], ["⚡ AAPL: Kurs 111 riss Wake-Band oben (110)"]);
+    expect(msg).toContain("riss Wake-Band oben");
+    expect(msg).toContain("Trend intakt");
+    expect(msg).not.toContain("keine Begründung");
+  });
 });
 
 describe("formatDailySummary extras (Lebenszeichen spec)", () => {

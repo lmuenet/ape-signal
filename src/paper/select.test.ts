@@ -3,6 +3,7 @@ import { runKuer, type KuerDeps } from "./select";
 import { berlinDay } from "./store";
 import { freshPortfolio, type Portfolio, type QuoteMap } from "./types";
 import type { KuerArtifact } from "./kuerArtifact";
+import { ClaudeLimitError, ClaudeTimeoutError } from "../claude/invoke";
 
 const NOW = new Date("2026-06-09T13:15:00Z"); // 15:15 Berlin
 const DAY = "2026-06-09";
@@ -121,6 +122,38 @@ describe("runKuer", () => {
     await runKuer({ scanSummary: "" }, deps);
     expect(saved).toHaveLength(0);
     expect(sent[0]).toContain("ausgefallen");
+  });
+
+  it("posts a Claude-limit alert and skips the day when the decider is rate-limited", async () => {
+    const { deps, saved, sent, kuerSaves } = makeDeps(freshPortfolio(1000), quotes, {
+      decideRunner: vi.fn(async () => {
+        throw new ClaudeLimitError("usage limit reached", "Entscheidung");
+      }),
+    });
+    await runKuer({ scanSummary: "NVDA: signal" }, deps);
+    expect(saved).toHaveLength(0); // no orders placed
+    expect(sent[0]).toContain("limitiert");
+    expect(kuerSaves.at(-1)?.status).toBe("skipped-limit");
+  });
+
+  it("posts a timeout alert and skips the day when the decider times out", async () => {
+    const { deps, sent, kuerSaves } = makeDeps(freshPortfolio(1000), quotes, {
+      decideRunner: vi.fn(async () => {
+        throw new ClaudeTimeoutError("timed out", "Entscheidung");
+      }),
+    });
+    await runKuer({ scanSummary: "NVDA: signal" }, deps);
+    expect(sent[0]).toContain("zu lange");
+    expect(kuerSaves.at(-1)?.status).toBe("skipped-timeout");
+  });
+
+  it("re-throws a non-Claude decider error (generic scan-failure alert handles it)", async () => {
+    const { deps } = makeDeps(freshPortfolio(1000), quotes, {
+      decideRunner: vi.fn(async () => {
+        throw new Error("network blip");
+      }),
+    });
+    await expect(runKuer({ scanSummary: "NVDA: signal" }, deps)).rejects.toThrow("network blip");
   });
 
   it("skips entirely when the daily budget is already used", async () => {

@@ -22,6 +22,16 @@ describe("buildTickPrompt", () => {
   it("omits the wake section when there is no breach", () => {
     expect(buildTickPrompt({ ...base, wakeBlock: "" })).not.toContain("## Weckgrund");
   });
+
+  it("forces a journal note on a band wake (never null)", () => {
+    expect(buildTickPrompt(base)).toContain('NIE "journal": null');
+  });
+
+  it("keeps the journal-null-ok rule when there is no breach", () => {
+    const p = buildTickPrompt({ ...base, wakeBlock: "" });
+    expect(p).toContain('"journal": null.');
+    expect(p).not.toContain('NIE "journal"');
+  });
 });
 
 describe("buildDecisionPrompt", () => {

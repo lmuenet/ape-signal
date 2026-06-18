@@ -61,3 +61,28 @@ sind. Der teure Teil eines Ticks ist der Sonnet-Call, nicht der Kurs.
   umgestellt, und `tickPipeline.ts` trennt Monitor- von Manager-Pfad.
 - Das Glossar (CONTEXT.md) unterscheidet jetzt Monitor-Tick, Manager-Tick
   und Wake-Up-Band.
+
+## Ergänzung 2026-06-18 — Wake-Transparenz (Hold ist kein Schweigen)
+
+Punkt 5 oben sagte: „Stille Monitor-Ticks posten nichts." Das stimmt weiter —
+ABER ein **gerissenes Wake-Band, das einen Manager-Tick auslöst**, ist kein
+stiller Monitor-Tick, sondern genau der Moment, den der Nutzer sehen will. Bisher
+postete der Manager nur bei einer tatsächlichen Anpassung (Stop/TP/Cancel) oder
+einer freien Journal-Notiz; entschied Mr Ape „halten", ging **nichts** raus — der
+Band-Riss UND die Hold-Entscheidung blieben unsichtbar.
+
+Neu:
+
+1. **Band-Riss wird deterministisch gepostet**, sobald er einen Manager-Tick
+   auslöst — auch wenn der anschließende LLM-Call nichts ändert, leer antwortet
+   oder ganz fehlschlägt/limitiert ist. Der Riss ist nie ein stiller Verlust.
+2. **Hold braucht eine Begründung:** Bei einem Band-Wake verlangt der Tick-Prompt
+   eine 1-Satz-Notiz („was ich tue ODER warum ich halte"). Fehlt sie trotzdem,
+   meldet die Engine „Mr Ape hält die Position (keine Begründung geliefert)".
+3. **Frequenz bleibt gezähmt:** Der 15-min-Band-Cooldown (Punkt 4) gilt
+   unverändert; ein während des Cooldowns gerissenes Band wird verbraucht und neu
+   abgeleitet, **ohne** zu posten. Nur Risse, die wirklich wecken, werden sichtbar.
+
+Damit verschiebt sich der Vertrag von „Stille = ruhiger Markt" zu „Stille =
+ruhiger Markt; ein Wake ist immer sichtbar". Harte Ereignisse (Fill/Stop) posten
+wie bisher ihre eigene Event-Zeile.

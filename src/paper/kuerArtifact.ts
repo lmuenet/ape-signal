@@ -20,7 +20,7 @@ export interface KuerArtifact {
   /** Accepted orders verbatim (incl. wake bands). */
   orders: EntryOrder[];
   rejected: Array<{ ticker: string; side: Side; reason: string }>;
-  status: "decided" | "skipped-unreadable";
+  status: "decided" | "skipped-unreadable" | "skipped-limit" | "skipped-timeout";
 }
 
 const kuerDir = (dir: string) => join(dir, "kuer");

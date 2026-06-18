@@ -3,6 +3,7 @@ import { runTick, type TickDeps } from "./tickPipeline";
 import { berlinDay, berlinStamp } from "./store";
 import { freshHealth, type HealthState } from "./health";
 import { freshPortfolio, type EntryOrder, type Portfolio, type Position, type QuoteMap } from "./types";
+import { ClaudeLimitError } from "../claude/invoke";
 
 const NOW = new Date("2026-06-09T14:00:00Z"); // 16:00 Berlin, US session
 
@@ -225,6 +226,34 @@ describe("monitor/manager split (ADR 0003)", () => {
     expect(deps.claudeRunner).toHaveBeenCalledTimes(1);
   });
 
+  it("a band-breach hold still surfaces the breach (no silent gap, ADR 0003 amendment)", async () => {
+    const p: Portfolio = { ...freshPortfolio(800), positions: [position({ wakeAbove: 109, wakeBelow: 90 })], lastTick: prevTick };
+    // default claudeRaw is an empty hold
+    const { deps, sent } = makeDeps(p, { NVDA: { close: 110, changePct: 1, high: 111, low: 99 } });
+    await runTick({ isClose: false }, deps);
+    expect(sent.some((m) => m.includes("riss Wake-Band oben"))).toBe(true);
+    expect(sent.some((m) => m.includes("hält die Position"))).toBe(true);
+  });
+
+  it("a band-breach hold WITH a reason posts the reason (forced journal)", async () => {
+    const p: Portfolio = { ...freshPortfolio(800), positions: [position({ wakeAbove: 109, wakeBelow: 90 })], lastTick: prevTick };
+    const raw = JSON.stringify({ adjustments: [], journal: "Halte — EMA20 intakt." });
+    const { deps, sent } = makeDeps(p, { NVDA: { close: 110, changePct: 1, high: 111, low: 99 } }, raw);
+    await runTick({ isClose: false }, deps);
+    const note = sent.find((m) => m.includes("Manager-Tick"));
+    expect(note).toContain("riss Wake-Band oben");
+    expect(note).toContain("EMA20 intakt");
+  });
+
+  it("surfaces the breach even when the manager call fails on a band wake", async () => {
+    const p: Portfolio = { ...freshPortfolio(800), positions: [position({ wakeAbove: 109, wakeBelow: 90 })], lastTick: prevTick };
+    const { deps, sent } = makeDeps(p, { NVDA: { close: 110, changePct: 1, high: 111, low: 99 } });
+    (deps.claudeRunner as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("boom"));
+    await runTick({ isClose: false }, deps);
+    expect(sent.some((m) => m.includes("riss Wake-Band oben"))).toBe(true);
+    expect(sent.some((m) => m.includes("nicht erreichbar"))).toBe(true);
+  });
+
   it("derives fallback bands for positions without bands", async () => {
     const p: Portfolio = { ...freshPortfolio(800), positions: [position()], lastTick: prevTick };
     const { deps, saved } = makeDeps(p, { NVDA: { close: 110, changePct: 1, high: 111, low: 99 } });
@@ -285,6 +314,14 @@ describe("quote-failure hardening (Lebenszeichen spec)", () => {
     (deps.claudeRunner as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("boom"));
     await runTick({ isClose: false }, deps);
     expect(sent.some((m) => m.includes("⚠️ Mr Ape nicht erreichbar"))).toBe(true);
+  });
+
+  it("posts a specific Claude-limit alert when the manager is rate-limited", async () => {
+    const p: Portfolio = { ...freshPortfolio(900), orders: [order()] };
+    const { deps, sent } = makeDeps(p, { TSLA: { close: 200, changePct: 0, high: 201, low: 199 } });
+    (deps.claudeRunner as ReturnType<typeof vi.fn>).mockRejectedValue(new ClaudeLimitError("usage limit", "Manager"));
+    await runTick({ isClose: false }, deps);
+    expect(sent.some((m) => m.includes("Claude limitiert"))).toBe(true);
   });
 
   it("a saveHealth failure never breaks the tick", async () => {

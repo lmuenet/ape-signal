@@ -1,6 +1,7 @@
 // src/paper/format.ts — plain-text rendering of the depot for prompts,
 // Telegram messages and the journal. Pure string builders.
 import { equity, liquidationPrice, positionPnl } from "./engine";
+import { formatTech } from "./trend";
 import type { Adjustment, EntryOrder, Portfolio, Position, QuoteMap, TickEvent } from "./types";
 
 const usd = (n: number) => `${n >= 0 ? "" : "-"}$${Math.abs(n).toFixed(2)}`;
@@ -48,7 +49,7 @@ export function renderQuotes(quotes: QuoteMap): string {
   return entries
     .map(
       ([t, q]) =>
-        `${t}: ${q.close} (heute ${sign(q.changePct)}%, Tageshoch ${q.high}, Tagestief ${q.low})`,
+        `${t}: ${q.close} (heute ${sign(q.changePct)}%, Tageshoch ${q.high}, Tagestief ${q.low})${formatTech(q)}`,
     )
     .join("\n");
 }
@@ -117,12 +118,26 @@ export function formatManagerNote(
   applied: Adjustment[],
   rejected: Array<{ adjustment: Adjustment; reason: string }>,
   closeEvents: TickEvent[],
+  breachLines: string[] = [],
 ): string {
-  if (journal.trim() === "" && applied.length === 0 && rejected.length === 0 && closeEvents.length === 0) {
+  if (
+    journal.trim() === "" &&
+    applied.length === 0 &&
+    rejected.length === 0 &&
+    closeEvents.length === 0 &&
+    breachLines.length === 0
+  ) {
     return "";
   }
   const lines = [`🦍 Mr Ape — Manager-Tick ${time}`];
+  // A breached wake band is always surfaced — even on a hold (ADR 0003
+  // amendment): a wake must never end in silence. With no reason from Mr Ape we
+  // still say he looked and held.
+  if (breachLines.length > 0) lines.push("", ...breachLines);
   if (journal.trim() !== "") lines.push("", journal.trim());
+  else if (breachLines.length > 0 && applied.length === 0 && closeEvents.length === 0) {
+    lines.push("", "↳ Mr Ape hält die Position (keine Begründung geliefert).");
+  }
   const closes = closeEvents.map(formatEvent);
   if (closes.length > 0) lines.push("", ...closes);
   const nonClose = applied.filter((a) => a.type !== "close_position");
