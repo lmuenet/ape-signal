@@ -16,7 +16,7 @@ import {
 import { buildTickPrompt } from "./prompts";
 import { parseTickResponse } from "./decision";
 import { healthLine, recordQuoteFailure, recordQuoteSuccess, type HealthState } from "./health";
-import { WAKE, type Portfolio, type QuoteMap, type TickEvent } from "./types";
+import { WAKE, type Adjustment, type Portfolio, type QuoteMap, type TickEvent } from "./types";
 import type { Language } from "../core/language";
 import { ClaudeError } from "../claude/invoke";
 
@@ -162,6 +162,7 @@ export async function runTick(opts: TickOptions, deps: TickDeps): Promise<void> 
     !staleClose && hasOpen && (events.length > 0 || opts.isClose || (breaches.length > 0 && cooldownOver));
 
   if (wake) {
+    const breachLines = breaches.map(describeBreach);
     try {
       const raw = await deps.claudeRunner(
         buildTickPrompt({
@@ -169,7 +170,7 @@ export async function runTick(opts: TickOptions, deps: TickDeps): Promise<void> 
           portfolioBlock: renderPortfolio(portfolio, quotes),
           quotesBlock: renderQuotes(quotes),
           eventsBlock: events.map(formatEvent).join("\n"),
-          wakeBlock: breaches.map(describeBreach).join("\n"),
+          wakeBlock: breachLines.join("\n"),
           journalTail: deps.readJournalTail(),
           isClose: opts.isClose,
           language: deps.language ?? "de",
@@ -178,32 +179,43 @@ export async function runTick(opts: TickOptions, deps: TickDeps): Promise<void> 
       portfolio = { ...portfolio, lastManagerCallAt: now.toISOString() };
 
       const response = parseTickResponse(raw);
-      if (response && (response.adjustments.length > 0 || response.journal.trim() !== "")) {
+      const journalText = response?.journal.trim() ?? "";
+      let applied: Adjustment[] = [];
+      let rejected: Array<{ adjustment: Adjustment; reason: string }> = [];
+      let closeEvents: TickEvent[] = [];
+      if (response && response.adjustments.length > 0) {
         const result = applyAdjustments(portfolio, response.adjustments, quotes, now.toISOString());
         portfolio = result.portfolio;
-
-        const noteLines: string[] = [];
-        if (response.journal.trim() !== "") noteLines.push(response.journal.trim());
-        for (const a of result.applied) noteLines.push(`→ ${describeAdjustment(a)}`);
-        for (const r of result.rejected) noteLines.push(`✗ abgelehnt (${r.reason}): ${describeAdjustment(r.adjustment)}`);
-        if (noteLines.length > 0) deps.appendJournal(`Tick ${stamp.slice(11)} — Mr Ape`, noteLines.join("\n"));
-
-        const closeEvents = result.events.filter((e: TickEvent) => e.kind === "position-closed");
-        const bundle = formatManagerNote(stamp.slice(11), response.journal, result.applied, result.rejected, closeEvents);
-        if (bundle !== "") await deps.send(bundle);
+        applied = result.applied;
+        rejected = result.rejected;
+        closeEvents = result.events.filter((e: TickEvent) => e.kind === "position-closed");
       }
+
+      const noteLines: string[] = [];
+      if (journalText !== "") noteLines.push(journalText);
+      for (const a of applied) noteLines.push(`→ ${describeAdjustment(a)}`);
+      for (const r of rejected) noteLines.push(`✗ abgelehnt (${r.reason}): ${describeAdjustment(r.adjustment)}`);
+      if (noteLines.length > 0) deps.appendJournal(`Tick ${stamp.slice(11)} — Mr Ape`, noteLines.join("\n"));
+
+      // A band breach is always surfaced (with Mr Ape's hold reason when he
+      // gives one), so a wake never ends in silence (ADR 0003 amendment). A
+      // hard-event/close wake without a breach stays quiet on a no-op as before.
+      const bundle = formatManagerNote(stamp.slice(11), journalText, applied, rejected, closeEvents, breachLines);
+      if (bundle !== "") await deps.send(bundle);
       deps.savePortfolio(portfolio);
     } catch (err) {
       // Stops stay where they are — the deterministic engine keeps protecting.
       console.error(`[tick] manager call failed, keeping current stops: ${err instanceof Error ? err.message : String(err)}`);
-      const msg =
+      const reason =
         err instanceof ClaudeError && err.kind === "limit"
           ? "⚠️ Claude limitiert (Usage-Limit) — Mr Ape pausiert; Stops bleiben unverändert (deterministischer Schutz läuft weiter)."
           : err instanceof ClaudeError && err.kind === "timeout"
             ? "⚠️ Mr Ape: Zeitüberschreitung beim Manager-Tick — Stops bleiben unverändert."
             : "⚠️ Mr Ape nicht erreichbar (Manager-Call fehlgeschlagen) — Stops bleiben unverändert.";
+      // Surface the breach even when the manager call failed (deterministic).
+      const text = breachLines.length > 0 ? `${breachLines.join("\n")}\n${reason}` : reason;
       try {
-        await deps.send(msg);
+        await deps.send(text);
       } catch (sendErr) {
         console.error(`[tick] failed to send manager-failure alert: ${sendErr instanceof Error ? sendErr.message : String(sendErr)}`);
       }

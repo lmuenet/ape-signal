@@ -205,7 +205,9 @@ export function buildTickPrompt(input: TickPromptInput): string {
     "  sie wecken dich nur. Ein gerissenes Band ist verbraucht — setze nach einem Weckruf",
     "  neue Bänder dort, wo du den nächsten Blick brauchst; sonst leitet das System",
     "  automatisch welche ab (halbe Distanz zu Stop bzw. Take-Profit).",
-    '- Keine Änderung nötig? Leeres adjustments-Array und "journal": null.',
+    input.wakeBlock.trim() === ""
+      ? '- Keine Änderung nötig? Leeres adjustments-Array und "journal": null.'
+      : '- Ein Wake-Band hat dich geweckt (siehe Weckgrund): Schreibe IMMER eine 1-Satz-Notiz ins "journal" — was du tust ODER warum du bewusst HÄLTST. Hier NIE "journal": null.',
     "",
     "Antworte mit GENAU diesem JSON-Format:",
     "{",
