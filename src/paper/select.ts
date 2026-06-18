@@ -5,7 +5,7 @@
 // or debate degrades gracefully; an unreadable decision skips the day (never
 // guessed trades).
 import { placeOrders, tradesPlacedToday } from "./engine";
-import { formatKuer, renderPortfolio, renderQuotes } from "./format";
+import { formatKuer, orderLine, renderPortfolio, renderQuotes } from "./format";
 import { buildDebatePrompt, buildDecisionPrompt, buildDossierPrompt } from "./prompts";
 import { parseDebate, parseDecision, parseDossier, type Debate, type Dossier } from "./decision";
 import { GUARDRAILS, type Portfolio, type QuoteMap, type WatchlistEntry, type WatchlistState } from "./types";
@@ -235,7 +235,9 @@ export async function runKuer(opts: KuerOptions, deps: KuerDeps): Promise<void> 
     decision.journal.trim(),
     "",
     accepted.length > 0 ? "Platzierte Orders:" : "Keine Orders platziert.",
-    ...accepted.map((o) => `- ${o.id}: ${o.ticker} ${o.side} ${o.leverage}x, Einsatz $${o.stake.toFixed(2)}, ${o.entryType === "market" ? "Market" : `Limit ${o.limitPrice}`}, SL ${o.stopLoss}${o.takeProfit !== undefined ? `, TP ${o.takeProfit}` : ""}`),
+    // Parity with the Telegram Kür (formatKuer→orderLine): show TTL validity
+    // (expiresOn ?? day) and the ladder-rung marker, not just type/stop.
+    ...accepted.map((o) => `- ${orderLine(o)}`),
     ...rejected.map((r) => `- abgelehnt (${r.reason}): ${r.decision.ticker} ${r.decision.side}`),
   ]
     .filter((l) => l !== "")

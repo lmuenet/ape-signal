@@ -253,6 +253,23 @@ describe("runKuer", () => {
     expect(sent[0]).toContain("Kandidatenkür");
   });
 
+  it("shows multi-day validity and a ladder marker in the journal (Parität mit orderLine)", async () => {
+    const ladderTtl = JSON.stringify({
+      trades: [
+        { ticker: "NVDA", side: "long", stake: 100, leverage: 1, entry: 99, stopLoss: 90, ttlDays: 3, thesis: "Rung nah" },
+        { ticker: "NVDA", side: "long", stake: 100, leverage: 1, entry: 97, stopLoss: 90, ttlDays: 3, thesis: "Rung fern" },
+      ],
+      journal: "Leiter auf NVDA, mehrtägig.",
+    });
+    const { deps, journal } = makeDeps(freshPortfolio(1000), quotes, {
+      decideRunner: vi.fn(async () => ladderTtl),
+    });
+    await runKuer({ scanSummary: "" }, deps);
+    const body = journal[0][1];
+    expect(body).toContain("gültig bis Handelsschluss 2026-06-11"); // expiresOn (ttlDays 3), not the creation day
+    expect(body).toContain("Leiter-Rung"); // ladder marker, analog orderLine
+  });
+
   it("accepts a zero-trade decision and still journals it", async () => {
     const { deps, saved, journal, sent } = makeDeps(freshPortfolio(1000), quotes, {
       decideRunner: vi.fn(async () => '{"trades": [], "journal": "Nichts überzeugt heute."}'),
