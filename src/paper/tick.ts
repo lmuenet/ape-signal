@@ -10,8 +10,12 @@ import { appendTickHistory } from "./tickHistory";
 import { appendJournal, berlinDay, berlinStamp, dataDir, loadPortfolio, readJournalTail, savePortfolio } from "./store";
 import { loadHealth, saveHealth } from "./health";
 import { runTick } from "./tickPipeline";
+import { runSetupRadar } from "./radar";
+import { runIntradayOpportunity } from "./intraday";
+import { loadWatchlist, saveWatchlist } from "./watchlist";
 import { loadSession } from "../config/session";
 import { resolveTickInterval } from "./tickInterval";
+import type { SetupTrigger } from "./types";
 
 const LABEL = process.argv[2] ?? "Tick";
 const START_BALANCE = Number(process.env.PAPER_START_BALANCE ?? "2000");
@@ -30,26 +34,51 @@ async function main(): Promise<void> {
   };
   const dir = dataDir();
   const tickIntervalMin = resolveTickInterval(dir, loadSession(process.env).tickIntervalMin);
+  const watchdog = resolveWatchdog(process.env);
+  const isClose = LABEL.toLowerCase() === "close";
+
+  // Deps shared by the monitor tick, the Setup-Radar and the intraday opener.
+  const shared = {
+    loadPortfolio: () => loadPortfolio(dir, START_BALANCE),
+    savePortfolio: (p: Parameters<typeof savePortfolio>[1]) => savePortfolio(dir, p),
+    appendJournal: (title: string, body: string) => appendJournal(dir, title, body),
+    readJournalTail: () => readJournalTail(dir),
+    fetchQuotes: (tickers: string[]) => fetchTickQuotes(tickers, fetch),
+    send: (text: string) => telegram.sendMessage(text),
+    berlinDay,
+    berlinStamp,
+    language: env.language,
+  };
 
   await runTick(
-    { isClose: LABEL.toLowerCase() === "close" },
+    { isClose },
     {
-      loadPortfolio: () => loadPortfolio(dir, START_BALANCE),
-      savePortfolio: (p) => savePortfolio(dir, p),
-      appendJournal: (title, body) => appendJournal(dir, title, body),
-      readJournalTail: () => readJournalTail(dir),
-      fetchQuotes: (tickers) => fetchTickQuotes(tickers, fetch),
+      ...shared,
       recordTick: (day, atIso, quotes) => appendTickHistory(dir, day, atIso, quotes),
       loadHealth: (day) => loadHealth(dir, day),
       saveHealth: (h) => saveHealth(dir, h),
-      claudeRunner: createClaudeRunner({ model: "sonnet", label: "Manager", onSlow, ...resolveWatchdog(process.env) }),
-      send: (text) => telegram.sendMessage(text),
-      berlinDay,
-      berlinStamp,
-      language: env.language,
+      claudeRunner: createClaudeRunner({ model: "sonnet", label: "Manager", onSlow, ...watchdog }),
       tickIntervalMin,
     },
   );
+
+  // Setup-Radar (Stufe 2) + gated intraday opening (Stufe 3) run each monitor tick,
+  // never on the close tick (no point opening as the session ends).
+  if (!isClose) {
+    const intraday = env.intradayOpportunismEnabled
+      ? (trigger: SetupTrigger) =>
+          runIntradayOpportunity(trigger, {
+            ...shared,
+            runner: createClaudeRunner({ model: "sonnet", label: "Intraday", onSlow, ...watchdog }),
+          })
+      : undefined;
+    await runSetupRadar({
+      ...shared,
+      loadWatchlist: () => loadWatchlist(dir),
+      saveWatchlist: (s) => saveWatchlist(dir, s),
+      intraday,
+    });
+  }
   console.log(`[tick] ${LABEL} done.`);
 }
 
