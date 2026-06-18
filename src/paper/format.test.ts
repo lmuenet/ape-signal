@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { describeAdjustment, formatDailySummary, formatManagerNote, renderPortfolio } from "./format";
-import type { Adjustment, Portfolio, Position, QuoteMap, TickEvent } from "./types";
+import type { Adjustment, EntryOrder, Portfolio, Position, QuoteMap, TickEvent } from "./types";
 
 const pos: Position = {
   id: "P1", ticker: "AAPL", side: "long", stake: 200, leverage: 2,
@@ -14,6 +14,18 @@ const p: Portfolio = { balance: 800, positions: [pos], orders: [], history: [] }
 describe("renderPortfolio", () => {
   it("shows the wake band on the position line", () => {
     expect(renderPortfolio(p, quotes)).toContain("Wake 95/110");
+  });
+
+  it("shows the multi-day expiry and a ladder-rung marker on the order line (Stufe 1)", () => {
+    const order: EntryOrder = {
+      id: "AAPL-2026-06-11-1", ticker: "AAPL", side: "long", stake: 100, leverage: 1,
+      entryType: "limit", limitPrice: 98, stopLoss: 90, thesis: "",
+      createdAt: "2026-06-11T13:00:00.000Z", day: "2026-06-11",
+      expiresOn: "2026-06-13", rungGroup: "AAPL-long-2026-06-11-ladder",
+    };
+    const out = renderPortfolio({ balance: 800, positions: [], orders: [order], history: [] }, {});
+    expect(out).toContain("gültig bis Handelsschluss 2026-06-13");
+    expect(out).toContain("Leiter-Rung");
   });
 });
 

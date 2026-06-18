@@ -43,6 +43,16 @@ describe("buildDecisionPrompt", () => {
     expect(p).toContain("wakeAbove");
     expect(p).toContain("Wake-Up-Band");
   });
+
+  it("steers towards laddered limit entries and multi-day TTL (Stufe 1)", () => {
+    const p = buildDecisionPrompt({
+      day: "2026-06-11", dossierBlock: "", debateBlock: "", quotesBlock: "",
+      portfolioBlock: "", journalTail: "",
+    });
+    expect(p).toContain("BEVORZUGE Limit-Einstiege");
+    expect(p).toContain("LEITER");
+    expect(p).toContain("ttlDays");
+  });
 });
 
 import { buildAdminPrompt, buildDossierPrompt } from "./prompts";

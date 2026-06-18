@@ -26,7 +26,8 @@ function positionLine(pos: Position, quotes: QuoteMap): string {
 function orderLine(o: EntryOrder): string {
   const entry = o.entryType === "market" ? "Market" : `Limit ${o.limitPrice}`;
   const tp = o.takeProfit !== undefined ? `, TP ${o.takeProfit}` : "";
-  return `[${o.id}] ${o.ticker} ${o.side} ${o.leverage}x, Einsatz ${usd(o.stake)}, ${entry}, SL ${o.stopLoss}${tp} (gültig bis Handelsschluss ${o.day})`;
+  const rung = o.rungGroup !== undefined ? ", Leiter-Rung" : "";
+  return `[${o.id}] ${o.ticker} ${o.side} ${o.leverage}x, Einsatz ${usd(o.stake)}, ${entry}, SL ${o.stopLoss}${tp}${rung} (gültig bis Handelsschluss ${o.expiresOn ?? o.day})`;
 }
 
 /** Compact depot block — used in prompts and the /journal status message. */
