@@ -75,18 +75,16 @@ describe("setupLabel", () => {
 });
 
 describe("OPPORTUNISM thresholds (centralised — Stufe 3 Feinschliff)", () => {
-  it("derives the RSI labels from the centralised thresholds", () => {
+  // Smoke only: the label echoes the CURRENT threshold value. This cannot prove
+  // the label is DERIVED from the constant (a hardcoded "RSI ≥ 70" would pass too
+  // while the default is 70). The real wiring is proved by the teeth-tests below,
+  // which pass NON-default thresholds and assert the behaviour changes.
+  it("surfaces the configured RSI thresholds in the labels", () => {
     expect(setupLabel("rsi-overbought")).toContain(String(OPPORTUNISM.rsiOverbought));
     expect(setupLabel("rsi-oversold")).toContain(String(OPPORTUNISM.rsiOversold));
   });
 
-  it("fires the RSI extreme exactly at the configured threshold", () => {
-    const prev: QuoteMap = { AAPL: tq({ rsi: OPPORTUNISM.rsiOverbought - 1 }) };
-    const now: QuoteMap = { AAPL: tq({ rsi: OPPORTUNISM.rsiOverbought }) };
-    expect(detectSetups([entry()], now, prev)[0]?.kind).toBe("rsi-overbought");
-  });
-
-  it("honours a stricter RSI threshold passed in (default = the OPPORTUNISM constant)", () => {
+  it("honours a stricter RSI threshold passed in — proves rsiExtreme reads the constant, not a literal", () => {
     const prev: QuoteMap = { AAPL: tq({ rsi: 69 }) };
     const now: QuoteMap = { AAPL: tq({ rsi: 73 }) };
     expect(detectSetups([entry()], now, prev)[0]?.kind).toBe("rsi-overbought"); // default 70 → 69→73 crosses

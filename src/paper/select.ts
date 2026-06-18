@@ -73,6 +73,23 @@ function degradeAlert(stage: string, err: unknown): string | null {
     : `⚠️ Mr Ape: ${stage} hat zu lange gebraucht (Timeout) — die Kür läuft mit reduzierter Datenbasis weiter.`;
 }
 
+/**
+ * Best-effort: post the degrade note WITHOUT letting a send failure abort the
+ * still-productive Kür. This is the only Telegram send mid-Kür whose failure
+ * would otherwise cancel the pending Opus decision; the final Kür post and the
+ * decider skip-alert run after the Kür's real work is done (or skipped), so they
+ * stay unguarded — their failure is handled by the top-level main().catch.
+ */
+async function tryDegradeAlert(deps: KuerDeps, stage: string, err: unknown): Promise<void> {
+  const alert = degradeAlert(stage, err);
+  if (!alert) return;
+  try {
+    await deps.send(alert);
+  } catch (sendErr) {
+    console.error(`[kuer] degrade alert send failed: ${sendErr instanceof Error ? sendErr.message : String(sendErr)}`);
+  }
+}
+
 function trySaveKuer(deps: KuerDeps, artifact: KuerArtifact): void {
   try {
     deps.saveKuer(artifact);
@@ -120,8 +137,7 @@ export async function runKuer(opts: KuerOptions, deps: KuerDeps): Promise<void> 
     dossier = parseDossier(await deps.researchRunner(buildDossierPrompt({ day, scanSummary: opts.scanSummary, journalTail, language: deps.language ?? "de" })));
   } catch (err) {
     console.error(`[kuer] research failed, degrading to scan-only: ${err instanceof Error ? err.message : String(err)}`);
-    const alert = degradeAlert("Die Recherche", err);
-    if (alert) await deps.send(alert);
+    await tryDegradeAlert(deps, "Die Recherche", err);
   }
 
   const tickers = [
@@ -145,8 +161,7 @@ export async function runKuer(opts: KuerOptions, deps: KuerDeps): Promise<void> 
       );
     } catch (err) {
       console.error(`[kuer] debate failed, deciding without it: ${err instanceof Error ? err.message : String(err)}`);
-      const alert = degradeAlert("Die Bull/Bear-Debatte", err);
-      if (alert) await deps.send(alert);
+      await tryDegradeAlert(deps, "Die Bull/Bear-Debatte", err);
     }
   }
 

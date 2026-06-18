@@ -149,6 +149,33 @@ describe("runKuer", () => {
     expect(sent.some((m) => m.includes("reduzierter Datenbasis"))).toBe(true);
   });
 
+  it("alerts with a timeout note but still decides when the bull/bear debate times out", async () => {
+    const { deps, saved, sent } = makeDeps(freshPortfolio(1000), quotes, {
+      debateRunner: vi.fn(async () => {
+        throw new ClaudeTimeoutError("timed out", "Debate");
+      }),
+    });
+    await runKuer({ scanSummary: "NVDA: signal" }, deps);
+    expect(saved.at(-1)?.orders).toHaveLength(1);
+    expect(sent.some((m) => m.includes("Timeout") && m.includes("reduzierter Datenbasis"))).toBe(true);
+  });
+
+  it("a failing degrade-alert send never aborts the Kür (still decides)", async () => {
+    const sent: string[] = [];
+    const { deps, saved } = makeDeps(freshPortfolio(1000), quotes, {
+      researchRunner: vi.fn(async () => {
+        throw new ClaudeLimitError("usage limit reached", "Research");
+      }),
+      send: vi.fn(async (t: string) => {
+        if (t.includes("reduzierter Datenbasis")) throw new Error("telegram down"); // the degrade alert send fails
+        sent.push(t);
+      }),
+    });
+    await runKuer({ scanSummary: "NVDA: signal" }, deps);
+    expect(saved.at(-1)?.orders).toHaveLength(1); // Kür decided despite the degrade-alert send throwing
+    expect(sent.at(-1)).toContain("Kandidatenkür"); // the final Kür post still went out
+  });
+
   it("keeps a generic (non-Claude) research failure a quiet stderr degrade — no extra alert", async () => {
     const { deps, saved, sent } = makeDeps(freshPortfolio(1000), quotes, {
       researchRunner: vi.fn(async () => {
