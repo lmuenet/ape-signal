@@ -1,8 +1,15 @@
 # Handoff — 2026-06-18: Intraday-Opportunismus — Stufe 3 Feinschliff (Folge-PR)
 
-**Status:** Der Opportunismus-PR (**lmuenet/ape-signal#2**) ist **gemergt** (`master` @ `d163692`)
-und läuft **live im Test** — Stufe 1 (Limit-Leiter + TTL) und Stufe 2 (Setup-Radar) sind aktiv;
-Stufe 3 (aktive Eröffnung) ist im Code, aber per `ENABLE_INTRADAY_OPPORTUNISM` **OFF**.
+**Status (aktualisiert):** Der **strukturelle Feinschliff ist umgesetzt** (PR
+**lmuenet/ape-signal#3**, Branch `feat/intraday-stufe3-feinschliff`). Tasks 1–3 erledigt
+(TDD, je 1 Commit); der optionale Trailing-Stop (Task 4) ist **bewusst ausgelassen** →
+eigener Folge-PR (Begründung unten). Voller `npx vitest run` (443) + `npx tsc --noEmit`
+**grün**. Finaler adversarialer Multi-Agent-Review gelaufen — keine Important-Findings;
+drei minor/nit-Punkte adressiert.
+
+Basis: Der Opportunismus-PR (**#2**) ist **gemergt** (`master` @ `d163692`) und läuft **live
+im Test** — Stufe 1 (Limit-Leiter + TTL) und Stufe 2 (Setup-Radar) aktiv; Stufe 3 (aktive
+Eröffnung) im Code, aber per `ENABLE_INTRADAY_OPPORTUNISM` **OFF**.
 
 **Ziel dieses Folge-PR:** den **strukturellen** Feinschliff von Stufe 3 + den direkt
 zugehörigen Rest **fertig** und als **fertigen PR bereit** haben — sodass nach genug
@@ -11,6 +18,46 @@ neuen Code zu schreiben. Kickoff: `docs/superpowers/plans/2026-06-18-intraday-st
 
 Grundlage: Brainstorm `…/brainstorms/2026-06-18-intraday-opportunismus.md`, Specs
 `…/specs/2026-06-18-intraday-opportunismus-stufe1-design.md` und `…-stufe2-3-design.md`.
+
+---
+
+## Umgesetzt in diesem Folge-PR (Stand 2026-06-18)
+
+1. **Research/Debatte limit-aware (Constraint #6)** — `select.ts`: neuer `degradeAlert`/
+   `tryDegradeAlert`; ein 5h-Limit/Timeout in Recherche oder Debatte wird jetzt per Telegram
+   sichtbar (statt still in stderr), die Kür degradiert weiter graceful. Commit `b5b1e64`.
+2. **Kür-Journal-Parität (TTL/Leiter)** — `format.ts` exportiert `orderLine`; der Kür-Journal-
+   Body nutzt es (zeigt `expiresOn ?? day` + Leiter-Rung, analog Telegram). Commit `73a9db0`.
+3. **`OPPORTUNISM`-Konstanten zentralisiert** — `types.ts` (+ `SetupThresholds`), `setupRadar.ts`
+   darauf umgestellt; **bit-identische Defaults** (reines Refactor). Commit `b28e5cd`.
+4. **Trailing-Stop — AUSGELASSEN.** Begründung: berührt `engine.ts/applyTick` (kritischster,
+   live laufender Pfad), braucht eine eigene Spec, und der PR ist mit Tasks 1–3 substanziell
+   genug. → **eigener Folge-PR** (siehe Backlog).
+
+Review-Fixes (Commit `0a4985d`): Degrade-Alert-`send` best-effort gekapselt (kein Kür-Abbruch,
+falls Telegram im seltenen Doppelfehler-Fall down ist); zwei zahnlose OPPORTUNISM-Tests ehrlich
+gemacht/entfernt; Debatte-`timeout`-Test ergänzt.
+
+### Datenabhängige Konstanten — Stelle + aktueller Default (nach Live-Daten kalibrieren)
+
+| Konstante | Stelle | Default heute | Bedeutung |
+|---|---|---|---|
+| `rsiOverbought` | `types.ts` `OPPORTUNISM` | `70` | RSI-Overbought-Schwelle (Setup-Radar) |
+| `rsiOversold` | `types.ts` `OPPORTUNISM` | `30` | RSI-Oversold-Schwelle |
+| `emaCrossMinGap` | `types.ts` `OPPORTUNISM` | `0` | Min. EMA10−EMA20-Abstand für Cross (0 = exakter Vorzeichenwechsel, Whipsaw-Guard) |
+| `maxIntradayTrades` | `types.ts` `GUARDRAILS` | `1` | Intraday-Budget-Tier (Stufe 3) |
+| `maxTtlDays` | `types.ts` `GUARDRAILS` | `5` | Max. TTL-Tage einer Order |
+| `ENABLE_INTRADAY_OPPORTUNISM` | `.env` / `env.ts` | `OFF` | Flag für Stufe-3-Eröffnung |
+
+Das spätere **Update nach Daten** ist ein Edit dieser Werte — kein neuer Code. `emaCrossMinGap`
+ist bewusst auf Default `0` (heutiges Verhalten); erhöhen, falls die Live-Daten Whipsaw-Cluster
+zeigen. Der optionale `thresholds`-Parameter von `detectSetups` existiert nur zur Testbarkeit —
+die Produktion (`radar.ts`) nutzt immer den `OPPORTUNISM`-Default.
+
+> Review-Notiz (by-design): `deps.send` gilt projektweit als best-effort. Der finale Kür-Post und
+> der Decider-Skip-Alert rufen `send` weiterhin ungekapselt auf (ihr Scheitern fängt
+> `main().catch`); nur der mitten-im-Ablauf liegende Degrade-Alert ist gekapselt, weil sein
+> Scheitern sonst die noch ausstehende Opus-Entscheidung verhindern würde.
 
 ---
 
@@ -73,6 +120,10 @@ Punkt 3 zentralisierten Konstanten + ggf. das Flag):
 
 ## Backlog (später, eigene PRs — NICHT dieser PR)
 
+- **Trailing-Stop (deterministisch):** `trailBy?` (absolut/%) an `Position`; in `applyTick` nach
+  günstiger Bewegung den Stop deterministisch nachziehen (nie lockern). Eigene Spec zuerst
+  (`docs/superpowers/specs/`). Bewusst aus diesem PR herausgehalten — berührt den live laufenden
+  `engine.ts/applyTick`-Pfad und ist eigenständig genug für einen separaten PR.
 - **B:** Intent-Event-Stream, `/status`-Command + opt-in Heartbeat.
 - **C:** B1 Residential-Proxy, Timing-Fix (Finding B), B3 Trending-Rückbau, C1-Embed,
   agent-reach, C2/C3/C4. Reihenfolge im MASTERPLAN.
