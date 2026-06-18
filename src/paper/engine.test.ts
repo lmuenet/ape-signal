@@ -7,6 +7,7 @@ import {
   equity,
   expireDayOrders,
   executionFee,
+  intradayTradesPlacedToday,
   liquidationPrice,
   placeOrders,
   positionPnl,
@@ -374,6 +375,41 @@ describe("applyTick — ladder mutual-cancel (Stufe 1)", () => {
     expect(portfolio.orders).toHaveLength(0);
     expect(events.some((e) => e.kind === "order-expired")).toBe(true);
     expect(portfolio.balance).toBe(800); // far rung refunded
+  });
+});
+
+describe("intraday source tagging + separate budget tier (Stufe 3)", () => {
+  const quotes: QuoteMap = { NVDA: q(100, 101, 99) };
+  const base = { ticker: "NVDA", side: "long" as const, stake: 100, leverage: 1, entry: 97, stopLoss: 90, thesis: "t" };
+
+  it("tags an intraday order and counts it only in the intraday tier (plus the shared daily cap)", () => {
+    const { portfolio } = placeOrders(freshPortfolio(1000), [base], quotes, { now: NOW, day: DAY, source: "intraday" });
+    expect(portfolio.orders[0].source).toBe("intraday");
+    expect(intradayTradesPlacedToday(portfolio, DAY)).toBe(1);
+    expect(tradesPlacedToday(portfolio, DAY)).toBe(1);
+  });
+
+  it("leaves Kür orders unsourced and out of the intraday tier", () => {
+    const { portfolio } = placeOrders(freshPortfolio(1000), [base], quotes, { now: NOW, day: DAY });
+    expect(portfolio.orders[0].source).toBeUndefined();
+    expect(intradayTradesPlacedToday(portfolio, DAY)).toBe(0);
+    expect(tradesPlacedToday(portfolio, DAY)).toBe(1);
+  });
+
+  it("propagates source onto the filled position", () => {
+    const placed = placeOrders(freshPortfolio(1000), [{ ...base, entry: "market" as const }], quotes, { now: NOW, day: DAY, source: "intraday" });
+    const { portfolio } = applyTick(placed.portfolio, quotes, { now: NOW, day: DAY, isClose: false });
+    expect(portfolio.positions[0].source).toBe("intraday");
+    expect(intradayTradesPlacedToday(portfolio, DAY)).toBe(1);
+  });
+
+  it("carries source onto the closed trade so a stopped intraday trade still counts today", () => {
+    const pos = position({ source: "intraday", stopLoss: 95, openedAt: NOW });
+    const prev = { NVDA: q(101, 102, 96) };
+    const p = withLastTick({ ...freshPortfolio(800), positions: [pos] }, prev);
+    const { portfolio } = applyTick(p, { NVDA: q(96, 102, 94.5) }, { now: NOW, day: DAY, isClose: false });
+    expect(portfolio.history[0].source).toBe("intraday");
+    expect(intradayTradesPlacedToday(portfolio, DAY)).toBe(1);
   });
 });
 

@@ -55,7 +55,25 @@ describe("buildDecisionPrompt", () => {
   });
 });
 
-import { buildAdminPrompt, buildDossierPrompt } from "./prompts";
+import { buildAdminPrompt, buildDossierPrompt, buildIntradayPrompt } from "./prompts";
+
+describe("buildIntradayPrompt (Stufe 3)", () => {
+  const base = {
+    stamp: "2026-06-09 17:00", ticker: "AMD", triggerLabel: "EMA10×EMA20 ↑ — Pullback",
+    price: 100, portfolioBlock: "(depot)", quotesBlock: "(quotes)", journalTail: "",
+  };
+  it("states the trigger, the limit-only rule and the one-trade cap", () => {
+    const p = buildIntradayPrompt(base);
+    expect(p).toContain("AMD @ 100");
+    expect(p).toContain("EMA10×EMA20 ↑");
+    expect(p).toContain("NUR Limit");
+    expect(p).toContain("GENAU EINE Order");
+  });
+  it("honours the language flag", () => {
+    expect(buildIntradayPrompt({ ...base, language: "en" })).toContain("ENGLISCH");
+    expect(buildIntradayPrompt(base)).toContain("DEUTSCH");
+  });
+});
 
 describe("prompt language label", () => {
   it("decision prompt defaults to a German free-text directive", () => {

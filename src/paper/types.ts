@@ -97,6 +97,8 @@ export interface ClosedTrade {
   reason: Exclude<CloseReason, "expired">;
   openedAt: string;
   closedAt: string;
+  /** Where the trade originated. Absent → "kuer". Carried for the intraday budget tier. */
+  source?: TradeSource;
 }
 
 export interface Portfolio {

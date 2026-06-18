@@ -240,6 +240,62 @@ export function buildTickPrompt(input: TickPromptInput): string {
   ].join("\n");
 }
 
+export interface IntradayPromptInput {
+  stamp: string; // Berlin "YYYY-MM-DD HH:mm"
+  ticker: string;
+  triggerLabel: string; // e.g. "EMA10×EMA20 ↑ · RSI 63 — Earnings-Momentum"
+  price: number;
+  portfolioBlock: string;
+  quotesBlock: string;
+  journalTail: string;
+  language?: Language;
+}
+
+/**
+ * Intraday opportunity (Stufe 3, gated, Sonnet): a DETERMINISTIC setup trigger
+ * fired on a watched, non-held ticker. Decide whether to open AT MOST ONE limit
+ * order — or nothing. Disciplined by design: limit-only (no late-fill market),
+ * the thesis must cite the trigger, and "nothing" is a full answer.
+ */
+export function buildIntradayPrompt(input: IntradayPromptInput): string {
+  return [
+    PERSONA,
+    "",
+    `Tick ${input.stamp}. INTRADAY-CHANCE: Ein deterministischer Setup-Trigger ist auf einem`,
+    `beobachteten (nicht gehaltenen) Ticker gefeuert.`,
+    "",
+    `## Trigger`,
+    `${input.ticker} @ ${input.price} — ${input.triggerLabel}`,
+    "",
+    "## Dein Depot",
+    input.portfolioBlock,
+    "",
+    "## Aktuelle Kurse (inkl. EMA10/20/50, RSI, Trend)",
+    input.quotesBlock,
+    "",
+    "## Dein Journal (letzte Einträge)",
+    input.journalTail.trim() === "" ? "(noch leer)" : input.journalTail,
+    "",
+    "## Auftrag & Regeln (hart erzwungen)",
+    `- Entscheide, ob du auf ${input.ticker} GENAU EINE Order setzt — oder NICHTS. Nichts tun ist`,
+    "  eine vollwertige, oft richtige Antwort (kein Zwang zu handeln).",
+    "- NUR Limit-Einstieg: \"entry\" MUSS eine Zahl (Limit-Level) sein, kein \"market\".",
+    "- stopLoss ist PFLICHT auf der Verlustseite. Optional takeProfit/ttlDays/wakeAbove/wakeBelow.",
+    "- Deine these MUSS den Trigger zitieren (warum dieses Setup JETZT einen Trade rechtfertigt).",
+    "- Höchstens 1 Trade; weitere werden ignoriert. Hebel 1–3, Einsatz ≤ 20% Equity.",
+    "",
+    "Antworte mit GENAU diesem JSON-Format (leeres trades-Array = kein Trade):",
+    "{",
+    '  "trades": [',
+    `    { "ticker": "${input.ticker}", "side": "long", "stake": 150, "leverage": 2, "entry": ${input.price}, "stopLoss": 0, "takeProfit": 0, "thesis": "warum jetzt — nenne den Trigger" }`,
+    "  ],",
+    '  "journal": "1-2 Sätze: warum dieser Trade ODER warum du verzichtest"',
+    "}",
+    "",
+    jsonOnly(input.language ?? "de"),
+  ].join("\n");
+}
+
 /** /journal admin (Sonnet): interpret a free-text balance instruction. */
 export function buildAdminPrompt(text: string, balance: number, language: Language = "de"): string {
   return [

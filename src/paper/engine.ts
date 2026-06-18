@@ -14,6 +14,7 @@ import {
   type TickEvent,
   type TickQuote,
   type TradeDecision,
+  type TradeSource,
 } from "./types";
 
 /**
@@ -110,6 +111,7 @@ function closeTrade(
       reason,
       openedAt: pos.openedAt,
       closedAt: now,
+      source: pos.source,
     },
     exitFee,
   };
@@ -186,6 +188,7 @@ export function applyTick(p: Portfolio, quotes: QuoteMap, opts: TickOptions): Ti
           openedAt: opts.now,
           thesis: order.thesis,
           fees: entryFee,
+          source: order.source,
         };
         positions.push(position);
         openedThisTick.add(position.id);
@@ -311,6 +314,18 @@ export function tradesPlacedToday(p: Portfolio, day: string): number {
 }
 
 /**
+ * Count today's trades that came from the gated intraday opportunism loop
+ * (source === "intraday") — the separate Stufe-3 budget tier, distinct from the Kür.
+ */
+export function intradayTradesPlacedToday(p: Portfolio, day: string): number {
+  return (
+    p.orders.filter((o) => o.source === "intraday" && o.day === day).length +
+    p.positions.filter((pos) => pos.source === "intraday" && pos.openedAt.startsWith(day)).length +
+    p.history.filter((t) => t.source === "intraday" && t.openedAt.startsWith(day)).length
+  );
+}
+
+/**
  * Validate Mr Ape's Kür decisions against the balanced guardrails and reserve
  * the stakes. Leverage is clamped to [1, max]; the stake is clamped to the
  * 20%-of-equity cap and the free balance. Structurally broken decisions
@@ -321,7 +336,7 @@ export function placeOrders(
   p: Portfolio,
   decisions: TradeDecision[],
   quotes: QuoteMap,
-  opts: { now: string; day: string },
+  opts: { now: string; day: string; source?: TradeSource },
 ): PlacementResult {
   const accepted: EntryOrder[] = [];
   const rejected: PlacementResult["rejected"] = [];
@@ -375,6 +390,7 @@ export function placeOrders(
       wakeAbove,
       wakeBelow,
       expiresOn,
+      source: opts.source,
       thesis: d.thesis ?? "",
       createdAt: opts.now,
       day: opts.day,
