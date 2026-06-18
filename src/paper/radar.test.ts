@@ -84,6 +84,25 @@ describe("runSetupRadar", () => {
     expect((intraday.mock.calls[0][0] as { ticker: string }).ticker).toBe("AMD");
   });
 
+  it("preserves the cross baseline of a paused (held) watchlist ticker — merge, not replace", async () => {
+    const held: Portfolio = {
+      ...freshPortfolio(1000),
+      positions: [{ id: "MSFT-x", ticker: "MSFT", side: "long", stake: 100, leverage: 1, entryPrice: 300, units: 1, stopLoss: 280, openedAt: NOW.toISOString(), thesis: "" }],
+    };
+    const twoEntries = (): WatchlistState => ({
+      day: DAY,
+      entries: [
+        { ticker: "AMD", note: "", addedDay: DAY, firedKinds: [] },
+        { ticker: "MSFT", note: "", addedDay: DAY, firedKinds: [] },
+      ],
+      lastQuotes: { AMD: tq({ ema10: 99, ema20: 100 }), MSFT: tq({ close: 300, ema10: 301, ema20: 300 }) },
+    });
+    const { deps, saved } = makeDeps({ loadWatchlist: twoEntries }, held);
+    await runSetupRadar(deps);
+    expect(saved[0].lastQuotes?.MSFT?.close).toBe(300); // held → not re-quoted, baseline kept
+    expect(saved[0].lastQuotes?.AMD?.close).toBe(105); // active → refreshed
+  });
+
   it("does not re-fire a kind already consumed today (still refreshes the baseline)", async () => {
     const { deps, sent, saved } = makeDeps({
       loadWatchlist: () => watchlist({ entries: [{ ticker: "AMD", note: "x", addedDay: DAY, firedKinds: ["ema-cross-up"] }] }),

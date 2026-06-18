@@ -58,10 +58,14 @@ export async function runSetupRadar(deps: RadarDeps): Promise<void> {
     const fresh = firedByTicker.get(e.ticker);
     return fresh ? { ...e, firedKinds: [...e.firedKinds, ...fresh] } : e;
   });
-  deps.saveWatchlist({ day, entries: updatedEntries, lastQuotes: quotes });
+  // Merge, not replace: only `active` tickers were re-quoted this tick — keep the
+  // baseline of a ticker that is paused (held this tick) so it stays continuous
+  // when it returns to the radar.
+  deps.saveWatchlist({ day, entries: updatedEntries, lastQuotes: { ...state?.lastQuotes, ...quotes } });
 
-  // Stufe 3 (gated): each fired trigger may open one order. The opener's own
-  // budget gate ensures at most one intraday trade even if several fire.
+  // Stufe 3 (gated): each fired trigger may open one order. MUST stay sequential —
+  // each opener reads the persisted portfolio, so once one trade is saved the next
+  // call's budget gate sees it and declines (the "max 1 intraday/day" invariant).
   if (deps.intraday) {
     for (const t of triggers) {
       await deps.intraday(t);

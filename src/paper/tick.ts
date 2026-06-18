@@ -72,12 +72,18 @@ async function main(): Promise<void> {
             runner: createClaudeRunner({ model: "sonnet", label: "Intraday", onSlow, ...watchdog }),
           })
       : undefined;
-    await runSetupRadar({
-      ...shared,
-      loadWatchlist: () => loadWatchlist(dir),
-      saveWatchlist: (s) => saveWatchlist(dir, s),
-      intraday,
-    });
+    // Best-effort: the monitor tick is already done + persisted, so a radar/Telegram
+    // hiccup must not mark the whole tick as failed.
+    try {
+      await runSetupRadar({
+        ...shared,
+        loadWatchlist: () => loadWatchlist(dir),
+        saveWatchlist: (s) => saveWatchlist(dir, s),
+        intraday,
+      });
+    } catch (err) {
+      console.error(`[tick] setup-radar failed (monitor tick already done): ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
   console.log(`[tick] ${LABEL} done.`);
 }
