@@ -144,9 +144,19 @@ export function applyTick(p: Portfolio, quotes: QuoteMap, opts: TickOptions): Ti
   const history = [...p.history];
   const orders: EntryOrder[] = [];
   const openedThisTick = new Set<string>();
+  // Ladder rungs that already filled THIS tick — their siblings get cancelled,
+  // never double-entered (Stufe 1 mutual-cancel).
+  const filledGroups = new Set<string>();
 
   // 1) Entry orders: fill or (at the closing tick) expire.
   for (const order of p.orders) {
+    // A sibling rung of this order's ladder already filled this tick → cancel it
+    // (refund the reserved stake), even without a quote.
+    if (order.rungGroup && filledGroups.has(order.rungGroup)) {
+      balance += order.stake;
+      events.push({ kind: "order-expired", order });
+      continue;
+    }
     const q = quotes[order.ticker];
     if (q) {
       const prev = prevQuotes[order.ticker];
@@ -158,6 +168,7 @@ export function applyTick(p: Portfolio, quotes: QuoteMap, opts: TickOptions): Ti
             ? order.limitPrice!
             : null;
       if (fillPrice !== null && fillPrice > 0) {
+        if (order.rungGroup) filledGroups.add(order.rungGroup);
         const entryFee = executionFee(order.stake * order.leverage);
         balance -= entryFee;
         const position: Position = {
@@ -187,6 +198,18 @@ export function applyTick(p: Portfolio, quotes: QuoteMap, opts: TickOptions): Ti
       events.push({ kind: "order-expired", order });
     } else {
       orders.push(order);
+    }
+  }
+
+  // Second pass: a rung kept earlier in this loop whose sibling filled later must
+  // still be cancelled (placement order need not match price order).
+  const survivingOrders: EntryOrder[] = [];
+  for (const o of orders) {
+    if (o.rungGroup && filledGroups.has(o.rungGroup)) {
+      balance += o.stake;
+      events.push({ kind: "order-expired", order: o });
+    } else {
+      survivingOrders.push(o);
     }
   }
 
@@ -239,7 +262,7 @@ export function applyTick(p: Portfolio, quotes: QuoteMap, opts: TickOptions): Ti
       ...p,
       balance,
       positions: remaining,
-      orders,
+      orders: survivingOrders,
       history,
       lastTick: { at: opts.now, day: opts.day, quotes },
     },
@@ -361,7 +384,31 @@ export function placeOrders(
     budget -= 1;
   });
 
-  return { portfolio, accepted, rejected };
+  // Ladder rungs (Stufe 1): ≥2 accepted LIMIT orders on the same ticker+side placed
+  // in THIS call are rungs of one conviction → shared rungGroup (one fills, the engine
+  // cancels the rest). Keyed by order id so pre-existing same-ticker orders are never
+  // retroactively grouped.
+  const limitCounts = new Map<string, number>();
+  for (const o of accepted) {
+    if (o.entryType !== "limit") continue;
+    const key = `${o.ticker}|${o.side}`;
+    limitCounts.set(key, (limitCounts.get(key) ?? 0) + 1);
+  }
+  const rungGroupById = new Map<string, string>();
+  for (const o of accepted) {
+    if (o.entryType === "limit" && (limitCounts.get(`${o.ticker}|${o.side}`) ?? 0) >= 2) {
+      rungGroupById.set(o.id, `${o.ticker}-${o.side}-${opts.day}-ladder`);
+    }
+  }
+  if (rungGroupById.size === 0) return { portfolio, accepted, rejected };
+
+  const withGroup = (o: EntryOrder): EntryOrder =>
+    rungGroupById.has(o.id) ? { ...o, rungGroup: rungGroupById.get(o.id) } : o;
+  return {
+    portfolio: { ...portfolio, orders: portfolio.orders.map(withGroup) },
+    accepted: accepted.map(withGroup),
+    rejected,
+  };
 }
 
 export interface AdjustmentResult {

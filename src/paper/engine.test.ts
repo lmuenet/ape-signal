@@ -317,6 +317,66 @@ describe("placeOrders — multi-day TTL (Stufe 1)", () => {
   });
 });
 
+describe("placeOrders — ladder rungs (rungGroup, Stufe 1)", () => {
+  const base = { ticker: "AAPL", side: "long" as const, stake: 100, leverage: 1, stopLoss: 90, thesis: "t" };
+
+  it("groups ≥2 limit orders on the same ticker+side into one rungGroup", () => {
+    const { accepted } = placeOrders(
+      freshPortfolio(1000),
+      [{ ...base, entry: 99 }, { ...base, entry: 97 }],
+      { AAPL: q(100, 101, 99) },
+      { now: NOW, day: DAY },
+    );
+    expect(accepted).toHaveLength(2);
+    expect(accepted[0].rungGroup).toBeDefined();
+    expect(accepted[0].rungGroup).toBe(accepted[1].rungGroup);
+  });
+
+  it("does not group a single limit or a market order", () => {
+    const { accepted } = placeOrders(
+      freshPortfolio(1000),
+      [{ ...base, entry: 99 }, { ...base, ticker: "NVDA", entry: "market" as const }],
+      { AAPL: q(100, 101, 99), NVDA: q(50, 51, 49) },
+      { now: NOW, day: DAY },
+    );
+    expect(accepted.find((o) => o.ticker === "AAPL")?.rungGroup).toBeUndefined();
+    expect(accepted.find((o) => o.ticker === "NVDA")?.rungGroup).toBeUndefined();
+  });
+});
+
+describe("applyTick — ladder mutual-cancel (Stufe 1)", () => {
+  const rg = "NVDA-long-2026-06-09-ladder";
+
+  it("fills the first touched rung and cancels its siblings (refunding their stake)", () => {
+    const r1 = order({ id: "NVDA-1", limitPrice: 100, rungGroup: rg, stopLoss: 90 });
+    const r2 = order({ id: "NVDA-2", limitPrice: 98, rungGroup: rg, stopLoss: 90 });
+    const p: Portfolio = { ...freshPortfolio(600), orders: [r1, r2] };
+    // First tick, day-low 97 touches both 100 and 98.
+    const { portfolio, events } = applyTick(p, { NVDA: q(99, 101, 97) }, { now: NOW, day: DAY, isClose: false });
+    expect(portfolio.positions).toHaveLength(1);
+    expect(portfolio.positions[0].entryPrice).toBe(100); // the nearer rung filled
+    expect(portfolio.orders).toHaveLength(0); // sibling cancelled
+    expect(events.filter((e) => e.kind === "entry-filled")).toHaveLength(1);
+    expect(events.filter((e) => e.kind === "order-expired")).toHaveLength(1);
+    expect(portfolio.balance).toBe(800); // 600 + 200 refunded sibling stake
+  });
+
+  it("cancels a rung kept earlier in the loop when a later sibling fills (second pass)", () => {
+    const rFar = order({ id: "NVDA-far", limitPrice: 95, rungGroup: rg, stopLoss: 90 });
+    const rNear = order({ id: "NVDA-near", limitPrice: 99, rungGroup: rg, stopLoss: 90 });
+    const prev = { NVDA: q(100, 100, 100) };
+    // Far rung placed first; it is NOT touched, the near rung is.
+    const p = withLastTick({ ...freshPortfolio(600), orders: [rFar, rNear] }, prev);
+    const { portfolio, events } = applyTick(p, { NVDA: q(98.5, 100, 98.5) }, { now: NOW, day: DAY, isClose: false });
+    expect(portfolio.positions).toHaveLength(1);
+    expect(portfolio.positions[0].id).toBe("NVDA-near");
+    expect(portfolio.positions[0].entryPrice).toBe(99);
+    expect(portfolio.orders).toHaveLength(0);
+    expect(events.some((e) => e.kind === "order-expired")).toBe(true);
+    expect(portfolio.balance).toBe(800); // far rung refunded
+  });
+});
+
 describe("applyAdjustments", () => {
   const quotes: QuoteMap = { NVDA: q(110, 112, 99) };
 
