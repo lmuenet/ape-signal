@@ -59,6 +59,20 @@ function renderDebate(debate: Debate | null): string {
     .join("\n");
 }
 
+/**
+ * Telegram note for a research/debate runner that hit the 5h usage limit or a
+ * timeout (Constraint #6). Unlike the decider — make-or-break, which skips the
+ * day — these degrade gracefully, but a limit/timeout must still be SURFACED,
+ * not swallowed into stderr, so a silent 5h-limit can't masquerade as "research
+ * found nothing". Any other failure stays a quiet stderr degrade (returns null).
+ */
+function degradeAlert(stage: string, err: unknown): string | null {
+  if (!(err instanceof ClaudeError) || !(err.kind === "limit" || err.kind === "timeout")) return null;
+  return err.kind === "limit"
+    ? `⚠️ Mr Ape: ${stage} ist aktuell limitiert (Usage-Limit) — die Kür läuft mit reduzierter Datenbasis weiter.`
+    : `⚠️ Mr Ape: ${stage} hat zu lange gebraucht (Timeout) — die Kür läuft mit reduzierter Datenbasis weiter.`;
+}
+
 function trySaveKuer(deps: KuerDeps, artifact: KuerArtifact): void {
   try {
     deps.saveKuer(artifact);
@@ -106,6 +120,8 @@ export async function runKuer(opts: KuerOptions, deps: KuerDeps): Promise<void> 
     dossier = parseDossier(await deps.researchRunner(buildDossierPrompt({ day, scanSummary: opts.scanSummary, journalTail, language: deps.language ?? "de" })));
   } catch (err) {
     console.error(`[kuer] research failed, degrading to scan-only: ${err instanceof Error ? err.message : String(err)}`);
+    const alert = degradeAlert("Die Recherche", err);
+    if (alert) await deps.send(alert);
   }
 
   const tickers = [
@@ -129,6 +145,8 @@ export async function runKuer(opts: KuerOptions, deps: KuerDeps): Promise<void> 
       );
     } catch (err) {
       console.error(`[kuer] debate failed, deciding without it: ${err instanceof Error ? err.message : String(err)}`);
+      const alert = degradeAlert("Die Bull/Bear-Debatte", err);
+      if (alert) await deps.send(alert);
     }
   }
 

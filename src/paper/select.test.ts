@@ -115,6 +115,51 @@ describe("runKuer", () => {
     expect(deps.debateRunner).not.toHaveBeenCalled();
   });
 
+  it("alerts but still decides when research is rate-limited (Constraint #6)", async () => {
+    const { deps, saved, sent } = makeDeps(freshPortfolio(1000), quotes, {
+      researchRunner: vi.fn(async () => {
+        throw new ClaudeLimitError("usage limit reached", "Research");
+      }),
+    });
+    await runKuer({ scanSummary: "NVDA: signal" }, deps);
+    expect(saved.at(-1)?.orders).toHaveLength(1); // Kür still decided on scan-only context
+    expect(sent.some((m) => m.includes("reduzierter Datenbasis"))).toBe(true); // surfaced, not swallowed
+    expect(sent.at(-1)).toContain("Kandidatenkür"); // and the regular Kür post still went out
+  });
+
+  it("alerts with a timeout note but still decides when research times out", async () => {
+    const { deps, saved, sent } = makeDeps(freshPortfolio(1000), quotes, {
+      researchRunner: vi.fn(async () => {
+        throw new ClaudeTimeoutError("timed out", "Research");
+      }),
+    });
+    await runKuer({ scanSummary: "NVDA: signal" }, deps);
+    expect(saved.at(-1)?.orders).toHaveLength(1);
+    expect(sent.some((m) => m.includes("Timeout") && m.includes("reduzierter Datenbasis"))).toBe(true);
+  });
+
+  it("alerts but still decides when the bull/bear debate is rate-limited", async () => {
+    const { deps, saved, sent } = makeDeps(freshPortfolio(1000), quotes, {
+      debateRunner: vi.fn(async () => {
+        throw new ClaudeLimitError("usage limit reached", "Debate");
+      }),
+    });
+    await runKuer({ scanSummary: "NVDA: signal" }, deps);
+    expect(saved.at(-1)?.orders).toHaveLength(1); // Opus still decided
+    expect(sent.some((m) => m.includes("reduzierter Datenbasis"))).toBe(true);
+  });
+
+  it("keeps a generic (non-Claude) research failure a quiet stderr degrade — no extra alert", async () => {
+    const { deps, saved, sent } = makeDeps(freshPortfolio(1000), quotes, {
+      researchRunner: vi.fn(async () => {
+        throw new Error("websearch down");
+      }),
+    });
+    await runKuer({ scanSummary: "NVDA: signal" }, deps);
+    expect(saved.at(-1)?.orders).toHaveLength(1);
+    expect(sent.filter((m) => m.includes("reduzierter Datenbasis"))).toHaveLength(0);
+  });
+
   it("skips the day on an unreadable decision instead of guessing", async () => {
     const { deps, saved, sent } = makeDeps(freshPortfolio(1000), quotes, {
       decideRunner: vi.fn(async () => "Ich würde gerne NVDA kaufen, aber ohne JSON."),
