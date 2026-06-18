@@ -308,7 +308,7 @@ Usage"-Signal. Umsetzungsskizze für die D1-Brainstorming-Runde:
 | 2 | **Timing-Fix (Finding B)** | Instrumentierung ✓ (2026-06-18); Timer-Vorziehen/Limit-Orders noch offen |
 | 3 | **B3 Trending abschalten + Refokus (Finding C)** | verkürzt Kette, schärft Fokus |
 | 4 | **B2 EMA-Signal** | Trend-Read EMA10/20/50 ✓ (2026-06-18, ohne Proxy); exaktes EMA 8 braucht Candles (B1) |
-| 5 | **B4 Intraday-Opportunismus (Finding D)** | gestaffelt (Beschluss 2026-06-18): **Stufe 1 Limit-Leiter + TTL + Prompt ✓ umgesetzt** (Branch `feat/intraday-opportunismus-staffelung`, null LLM) → **Stufe 2** Setup-Radar (null LLM, offen) → **Stufe 3** aktive Eröffnung gegated nach B1+B2 |
+| 5 | **B4 Intraday-Opportunismus (Finding D)** | gestaffelt (Beschluss 2026-06-18), **alle drei Stufen umgesetzt** (Branch `feat/intraday-opportunismus-staffelung`): **Stufe 1** Limit-Leiter + TTL + Prompt ✓ (null LLM) · **Stufe 2** Setup-Radar (deterministische Watchlist-Trigger → Telegram, null LLM) ✓ · **Stufe 3** aktive Eröffnung ✓ **gegated** hinter `ENABLE_INTRADAY_OPPORTUNISM` (Default OFF), eigenes Budget-Tier, nur Limit, keine Dopplung |
 | 6 | **C1 Embed/Refresh** | braucht B1 |
 | 7 | **agent-reach Recherche-Anreicherung** | optional, nach B1; Cookie-/VPS-Betrieb klären |
 | 8 | **C2 Mr-Ape-Chat read-only** | Listener muss Dialog persistieren |

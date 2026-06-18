@@ -49,7 +49,24 @@ abgeleitet — es weckt nie zweimal.
 ### Kandidatenkür
 Der eine Entscheidungspunkt pro Handelstag (direkt nach dem PreUS-Lauf), an dem
 Mr Ape (Opus) auf Basis des Dossiers und der Debatte bis zu 3 Trade-Kandidaten
-in Orders verwandelt.
+in Orders verwandelt. Bevorzugt **Limit-Leitern** (mehrere Limits auf denselben
+Ticker = eine Conviction; füllt eine, verfallen die anderen) und optional über
+mehrere Tage gültige Orders (`ttlDays`), damit der Einstieg zur richtigen Zeit
+geschieht statt erzwungen zum Open.
+
+### Setup-Radar (Watchlist)
+Eine kleine, einmal täglich zur Kür geseedete Liste **nicht gehaltener** Ticker
+(nicht gehandelte Dossier-Kandidaten). Jeder Monitor-Tick prüft deterministische,
+**close-basierte** Trigger (EMA10×EMA20-Cross, RSI-Extrem aus den Scanner-Spalten)
+und **meldet** ein Setup per Telegram — er handelt nicht von sich aus. Jede
+Trigger-Art feuert höchstens einmal pro Tag und Ticker.
+
+### Intraday-Chance (Stufe 3, opt-in)
+Hinter `ENABLE_INTRADAY_OPPORTUNISM` (Default aus) darf ein Setup-Trigger einen
+fokussierten LLM-Aufruf wecken, der **genau eine** Limit-Order auf dem getriggerten
+Ticker setzt — in einem **eigenen Budget-Tier** (getrennt vom Kür-Budget, zusätzlich
+zum Tages-Gesamtdeckel), nur als Limit, nie auf einem bereits gehaltenen Ticker und
+nie geraten (unlesbare/limitierte Antwort → kein Trade).
 
 ### Debatte (Advocatus Diaboli)
 Der adversariale Zwischenschritt der Kür: Sonnet formuliert für jeden
