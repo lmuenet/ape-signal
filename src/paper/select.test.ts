@@ -115,6 +115,78 @@ describe("runKuer", () => {
     expect(deps.debateRunner).not.toHaveBeenCalled();
   });
 
+  it("alerts but still decides when research is rate-limited (Constraint #6)", async () => {
+    const { deps, saved, sent } = makeDeps(freshPortfolio(1000), quotes, {
+      researchRunner: vi.fn(async () => {
+        throw new ClaudeLimitError("usage limit reached", "Research");
+      }),
+    });
+    await runKuer({ scanSummary: "NVDA: signal" }, deps);
+    expect(saved.at(-1)?.orders).toHaveLength(1); // Kür still decided on scan-only context
+    expect(sent.some((m) => m.includes("reduzierter Datenbasis"))).toBe(true); // surfaced, not swallowed
+    expect(sent.at(-1)).toContain("Kandidatenkür"); // and the regular Kür post still went out
+  });
+
+  it("alerts with a timeout note but still decides when research times out", async () => {
+    const { deps, saved, sent } = makeDeps(freshPortfolio(1000), quotes, {
+      researchRunner: vi.fn(async () => {
+        throw new ClaudeTimeoutError("timed out", "Research");
+      }),
+    });
+    await runKuer({ scanSummary: "NVDA: signal" }, deps);
+    expect(saved.at(-1)?.orders).toHaveLength(1);
+    expect(sent.some((m) => m.includes("Timeout") && m.includes("reduzierter Datenbasis"))).toBe(true);
+  });
+
+  it("alerts but still decides when the bull/bear debate is rate-limited", async () => {
+    const { deps, saved, sent } = makeDeps(freshPortfolio(1000), quotes, {
+      debateRunner: vi.fn(async () => {
+        throw new ClaudeLimitError("usage limit reached", "Debate");
+      }),
+    });
+    await runKuer({ scanSummary: "NVDA: signal" }, deps);
+    expect(saved.at(-1)?.orders).toHaveLength(1); // Opus still decided
+    expect(sent.some((m) => m.includes("reduzierter Datenbasis"))).toBe(true);
+  });
+
+  it("alerts with a timeout note but still decides when the bull/bear debate times out", async () => {
+    const { deps, saved, sent } = makeDeps(freshPortfolio(1000), quotes, {
+      debateRunner: vi.fn(async () => {
+        throw new ClaudeTimeoutError("timed out", "Debate");
+      }),
+    });
+    await runKuer({ scanSummary: "NVDA: signal" }, deps);
+    expect(saved.at(-1)?.orders).toHaveLength(1);
+    expect(sent.some((m) => m.includes("Timeout") && m.includes("reduzierter Datenbasis"))).toBe(true);
+  });
+
+  it("a failing degrade-alert send never aborts the Kür (still decides)", async () => {
+    const sent: string[] = [];
+    const { deps, saved } = makeDeps(freshPortfolio(1000), quotes, {
+      researchRunner: vi.fn(async () => {
+        throw new ClaudeLimitError("usage limit reached", "Research");
+      }),
+      send: vi.fn(async (t: string) => {
+        if (t.includes("reduzierter Datenbasis")) throw new Error("telegram down"); // the degrade alert send fails
+        sent.push(t);
+      }),
+    });
+    await runKuer({ scanSummary: "NVDA: signal" }, deps);
+    expect(saved.at(-1)?.orders).toHaveLength(1); // Kür decided despite the degrade-alert send throwing
+    expect(sent.at(-1)).toContain("Kandidatenkür"); // the final Kür post still went out
+  });
+
+  it("keeps a generic (non-Claude) research failure a quiet stderr degrade — no extra alert", async () => {
+    const { deps, saved, sent } = makeDeps(freshPortfolio(1000), quotes, {
+      researchRunner: vi.fn(async () => {
+        throw new Error("websearch down");
+      }),
+    });
+    await runKuer({ scanSummary: "NVDA: signal" }, deps);
+    expect(saved.at(-1)?.orders).toHaveLength(1);
+    expect(sent.filter((m) => m.includes("reduzierter Datenbasis"))).toHaveLength(0);
+  });
+
   it("skips the day on an unreadable decision instead of guessing", async () => {
     const { deps, saved, sent } = makeDeps(freshPortfolio(1000), quotes, {
       decideRunner: vi.fn(async () => "Ich würde gerne NVDA kaufen, aber ohne JSON."),
@@ -206,6 +278,23 @@ describe("runKuer", () => {
     });
     await runKuer({ scanSummary: "" }, deps);
     expect(sent[0]).toContain("Kandidatenkür");
+  });
+
+  it("shows multi-day validity and a ladder marker in the journal (Parität mit orderLine)", async () => {
+    const ladderTtl = JSON.stringify({
+      trades: [
+        { ticker: "NVDA", side: "long", stake: 100, leverage: 1, entry: 99, stopLoss: 90, ttlDays: 3, thesis: "Rung nah" },
+        { ticker: "NVDA", side: "long", stake: 100, leverage: 1, entry: 97, stopLoss: 90, ttlDays: 3, thesis: "Rung fern" },
+      ],
+      journal: "Leiter auf NVDA, mehrtägig.",
+    });
+    const { deps, journal } = makeDeps(freshPortfolio(1000), quotes, {
+      decideRunner: vi.fn(async () => ladderTtl),
+    });
+    await runKuer({ scanSummary: "" }, deps);
+    const body = journal[0][1];
+    expect(body).toContain("gültig bis Handelsschluss 2026-06-11"); // expiresOn (ttlDays 3), not the creation day
+    expect(body).toContain("Leiter-Rung"); // ladder marker, analog orderLine
   });
 
   it("accepts a zero-trade decision and still journals it", async () => {

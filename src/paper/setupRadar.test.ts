@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { detectSetups, setupLabel } from "./setupRadar";
-import type { QuoteMap, TickQuote, WatchlistEntry } from "./types";
+import { OPPORTUNISM, type QuoteMap, type TickQuote, type WatchlistEntry } from "./types";
 
 const tq = (over: Partial<TickQuote> = {}): TickQuote => ({ close: 100, changePct: 0, high: 101, low: 99, ...over });
 const entry = (over: Partial<WatchlistEntry> = {}): WatchlistEntry => ({
@@ -71,5 +71,32 @@ describe("detectSetups — gating", () => {
 describe("setupLabel", () => {
   it("gives a human label per kind", () => {
     expect(setupLabel("rsi-overbought")).toContain("überkauft");
+  });
+});
+
+describe("OPPORTUNISM thresholds (centralised — Stufe 3 Feinschliff)", () => {
+  // Smoke only: the label echoes the CURRENT threshold value. This cannot prove
+  // the label is DERIVED from the constant (a hardcoded "RSI ≥ 70" would pass too
+  // while the default is 70). The real wiring is proved by the teeth-tests below,
+  // which pass NON-default thresholds and assert the behaviour changes.
+  it("surfaces the configured RSI thresholds in the labels", () => {
+    expect(setupLabel("rsi-overbought")).toContain(String(OPPORTUNISM.rsiOverbought));
+    expect(setupLabel("rsi-oversold")).toContain(String(OPPORTUNISM.rsiOversold));
+  });
+
+  it("honours a stricter RSI threshold passed in — proves rsiExtreme reads the constant, not a literal", () => {
+    const prev: QuoteMap = { AAPL: tq({ rsi: 69 }) };
+    const now: QuoteMap = { AAPL: tq({ rsi: 73 }) };
+    expect(detectSetups([entry()], now, prev)[0]?.kind).toBe("rsi-overbought"); // default 70 → 69→73 crosses
+    expect(detectSetups([entry()], now, prev, { ...OPPORTUNISM, rsiOverbought: 75 })).toHaveLength(0); // 75 → not yet
+  });
+
+  it("honours an EMA-cross minimum gap; default 0 = today's exact sign change", () => {
+    const prev: QuoteMap = { AAPL: tq({ ema10: 100, ema20: 100 }) };
+    const small: QuoteMap = { AAPL: tq({ ema10: 100.3, ema20: 100 }) };
+    expect(detectSetups([entry()], small, prev)[0]?.kind).toBe("ema-cross-up"); // gap 0 → any positive cross fires
+    expect(detectSetups([entry()], small, prev, { ...OPPORTUNISM, emaCrossMinGap: 0.5 })).toHaveLength(0); // 0.3 < 0.5
+    const wide: QuoteMap = { AAPL: tq({ ema10: 100.8, ema20: 100 }) };
+    expect(detectSetups([entry()], wide, prev, { ...OPPORTUNISM, emaCrossMinGap: 0.5 })[0]?.kind).toBe("ema-cross-up");
   });
 });

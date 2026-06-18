@@ -5,7 +5,7 @@
 // or debate degrades gracefully; an unreadable decision skips the day (never
 // guessed trades).
 import { placeOrders, tradesPlacedToday } from "./engine";
-import { formatKuer, renderPortfolio, renderQuotes } from "./format";
+import { formatKuer, orderLine, renderPortfolio, renderQuotes } from "./format";
 import { buildDebatePrompt, buildDecisionPrompt, buildDossierPrompt } from "./prompts";
 import { parseDebate, parseDecision, parseDossier, type Debate, type Dossier } from "./decision";
 import { GUARDRAILS, type Portfolio, type QuoteMap, type WatchlistEntry, type WatchlistState } from "./types";
@@ -59,6 +59,37 @@ function renderDebate(debate: Debate | null): string {
     .join("\n");
 }
 
+/**
+ * Telegram note for a research/debate runner that hit the 5h usage limit or a
+ * timeout (Constraint #6). Unlike the decider — make-or-break, which skips the
+ * day — these degrade gracefully, but a limit/timeout must still be SURFACED,
+ * not swallowed into stderr, so a silent 5h-limit can't masquerade as "research
+ * found nothing". Any other failure stays a quiet stderr degrade (returns null).
+ */
+function degradeAlert(stage: string, err: unknown): string | null {
+  if (!(err instanceof ClaudeError) || !(err.kind === "limit" || err.kind === "timeout")) return null;
+  return err.kind === "limit"
+    ? `⚠️ Mr Ape: ${stage} ist aktuell limitiert (Usage-Limit) — die Kür läuft mit reduzierter Datenbasis weiter.`
+    : `⚠️ Mr Ape: ${stage} hat zu lange gebraucht (Timeout) — die Kür läuft mit reduzierter Datenbasis weiter.`;
+}
+
+/**
+ * Best-effort: post the degrade note WITHOUT letting a send failure abort the
+ * still-productive Kür. This is the only Telegram send mid-Kür whose failure
+ * would otherwise cancel the pending Opus decision; the final Kür post and the
+ * decider skip-alert run after the Kür's real work is done (or skipped), so they
+ * stay unguarded — their failure is handled by the top-level main().catch.
+ */
+async function tryDegradeAlert(deps: KuerDeps, stage: string, err: unknown): Promise<void> {
+  const alert = degradeAlert(stage, err);
+  if (!alert) return;
+  try {
+    await deps.send(alert);
+  } catch (sendErr) {
+    console.error(`[kuer] degrade alert send failed: ${sendErr instanceof Error ? sendErr.message : String(sendErr)}`);
+  }
+}
+
 function trySaveKuer(deps: KuerDeps, artifact: KuerArtifact): void {
   try {
     deps.saveKuer(artifact);
@@ -106,6 +137,7 @@ export async function runKuer(opts: KuerOptions, deps: KuerDeps): Promise<void> 
     dossier = parseDossier(await deps.researchRunner(buildDossierPrompt({ day, scanSummary: opts.scanSummary, journalTail, language: deps.language ?? "de" })));
   } catch (err) {
     console.error(`[kuer] research failed, degrading to scan-only: ${err instanceof Error ? err.message : String(err)}`);
+    await tryDegradeAlert(deps, "Die Recherche", err);
   }
 
   const tickers = [
@@ -129,6 +161,7 @@ export async function runKuer(opts: KuerOptions, deps: KuerDeps): Promise<void> 
       );
     } catch (err) {
       console.error(`[kuer] debate failed, deciding without it: ${err instanceof Error ? err.message : String(err)}`);
+      await tryDegradeAlert(deps, "Die Bull/Bear-Debatte", err);
     }
   }
 
@@ -217,7 +250,9 @@ export async function runKuer(opts: KuerOptions, deps: KuerDeps): Promise<void> 
     decision.journal.trim(),
     "",
     accepted.length > 0 ? "Platzierte Orders:" : "Keine Orders platziert.",
-    ...accepted.map((o) => `- ${o.id}: ${o.ticker} ${o.side} ${o.leverage}x, Einsatz $${o.stake.toFixed(2)}, ${o.entryType === "market" ? "Market" : `Limit ${o.limitPrice}`}, SL ${o.stopLoss}${o.takeProfit !== undefined ? `, TP ${o.takeProfit}` : ""}`),
+    // Parity with the Telegram Kür (formatKuer→orderLine): show TTL validity
+    // (expiresOn ?? day) and the ladder-rung marker, not just type/stop.
+    ...accepted.map((o) => `- ${orderLine(o)}`),
     ...rejected.map((r) => `- abgelehnt (${r.reason}): ${r.decision.ticker} ${r.decision.side}`),
   ]
     .filter((l) => l !== "")

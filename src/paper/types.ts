@@ -128,6 +128,40 @@ export const GUARDRAILS = {
 } as const;
 
 /**
+ * Shape of the data-dependent intraday-opportunism knobs the Setup-Radar reads
+ * (Stufe 2/3). Pulled out so detectSetups can be driven (and tested) from one
+ * place instead of hard-coded literals.
+ */
+export interface SetupThresholds {
+  /** RSI level a tick must cross UP to fire "overbought". */
+  rsiOverbought: number;
+  /** RSI level a tick must cross DOWN to fire "oversold". */
+  rsiOversold: number;
+  /**
+   * Minimum EMA10−EMA20 distance the new stack must clear for an EMA cross to
+   * fire — a whipsaw guard. 0 = an exact sign change (today's behaviour).
+   */
+  emaCrossMinGap: number;
+}
+
+/**
+ * Data-dependent intraday-opportunism knobs (Stufe 2/3), centralised so the
+ * post-live calibration is ONE edit here, not a code hunt. Every value is a
+ * "tune from live data" knob; the defaults reproduce today's hard-coded
+ * behaviour bit-for-bit (RSI 70/30, exact EMA sign change), so wiring these in
+ * is a pure refactor.
+ *
+ * NOTE: the related budget/TTL caps `GUARDRAILS.maxIntradayTrades` (1) and
+ * `GUARDRAILS.maxTtlDays` (5) are equally data-dependent but stay in GUARDRAILS
+ * (the engine enforces them) — calibrate those there, alongside these.
+ */
+export const OPPORTUNISM = {
+  rsiOverbought: 70, // tune from live data
+  rsiOversold: 30, // tune from live data
+  emaCrossMinGap: 0, // tune from live data (0 = exact EMA sign change = today's behaviour)
+} as const satisfies SetupThresholds;
+
+/**
  * Simulated execution costs so the paper performance doesn't flatter
  * (Smartbroker+/gettex-style fee schedule, see ADR 0002). The half-spread hits
  * market-type executions only (market entry, stop, manual close, liquidation);

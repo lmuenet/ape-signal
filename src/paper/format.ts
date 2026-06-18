@@ -23,7 +23,8 @@ function positionLine(pos: Position, quotes: QuoteMap): string {
   );
 }
 
-function orderLine(o: EntryOrder): string {
+/** One human line for an entry order: type, stop, ladder marker and validity (expiresOn ?? day). */
+export function orderLine(o: EntryOrder): string {
   const entry = o.entryType === "market" ? "Market" : `Limit ${o.limitPrice}`;
   const tp = o.takeProfit !== undefined ? `, TP ${o.takeProfit}` : "";
   const rung = o.rungGroup !== undefined ? ", Leiter-Rung" : "";
