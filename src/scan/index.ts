@@ -10,6 +10,7 @@ import { fetchEarningsToday } from "./earnings";
 import { createClaudeRunner, resolveWatchdog } from "../claude/invoke";
 import { runKuer } from "../paper/select";
 import { saveKuerArtifact } from "../paper/kuerArtifact";
+import { saveWatchlist } from "../paper/watchlist";
 import { fetchTickQuotes } from "../paper/quotes";
 import {
   appendJournal,
@@ -109,6 +110,7 @@ async function main(): Promise<void> {
         decideRunner: createClaudeRunner({ model: "opus", label: "Entscheidung", onSlow, ...watchdog }),
         send: (text) => telegram.sendMessage(text),
         saveKuer: (a) => saveKuerArtifact(dir, a),
+        saveWatchlist: (s) => saveWatchlist(dir, s),
         berlinDay,
         language: env.language,
       },
