@@ -9,6 +9,12 @@ brainstorming → spec → writing-plans → executing-plans.
 
 ## 0. Status-Snapshot
 
+- **Erledigt 2026-06-18 (Branch `feat/claude-health-ema-wake-transparenz`, PR offen):**
+  `invoke.ts`-Härtung (Timeout + Limit-Erkennung + Stufen-Timing → **Finding B
+  Instrumentierung UND Finding E Health** aus einer Naht); **EMA/RSI-Trend via
+  Scanner-Spalten** (entkoppelt **B2 von B1** — kein Proxy für den Trend-Read);
+  **Wake-Transparenz** (Band-Riss & Hold sichtbar, ADR 0003 ergänzt). Details:
+  `docs/superpowers/brainstorms/2026-06-18-nautilus-vergleich-und-grill-beschluesse.md`.
 - **Erledigt & gepusht:** A1 (Language `APE_LANGUAGE`), A2 (Handelsfenster
   `SESSION` + `/ticker`), C1-Baseline (feste Kennzahlen-Legende über dem
   Positions-Chart). `origin/master` == lokal (`073cce9`).
@@ -105,8 +111,15 @@ Aufwand), agent-reach danach als optionale Recherche-Erweiterung evaluieren.
 
 EMA 8 (B2) braucht **saubere Candles**. Die gibt es heute auf dem VPS nicht
 (ADR 0001). Der Proxy schaltet einen freien Candle-Feed frei → EMA 8 wird
-berechenbar, und der C1-Embed/Refresh-Chart bekommt echte Historie. Reihenfolge
-bleibt also: **B1 (Proxy) zuerst**, dann B2 (EMA 8) und C1-Embed.
+berechenbar, und der C1-Embed/Refresh-Chart bekommt echte Historie.
+
+**Update 2026-06-18 (umgesetzt):** Für eine **EMA-Trend-Einschätzung** ist der
+Proxy NICHT nötig — der TradingView-Scanner liefert EMA10/20/50 + RSI als fertige
+Spalten (in dieser PR genutzt, `src/paper/trend.ts`). Das **entkoppelt B2 von
+B1**. Der Proxy bleibt für **echte Candle-Historie** (exaktes EMA 8, C1-Embed) und
+StockTwits/Reddit-Sentiment relevant — aber nicht mehr als Flaschenhals für den
+Trend-Read. Reihenfolge für den Rest also weiterhin: **B1 (Proxy)** vor echtem
+EMA 8 und C1-Embed.
 
 ---
 
@@ -274,16 +287,16 @@ Usage"-Signal. Umsetzungsskizze für die D1-Brainstorming-Runde:
 |---|---|---|
 | 0 | **C1-Baseline deployen** | erledigt im Code, Deploy auf VPS verifizieren |
 | 1 | **B1 Residential-Proxy (webshare.io)** | Transport-Layer, schaltet B2 + C1-Embed + breitere Recherche frei |
-| 2 | **Timing-Fix (Finding B)** | klein & wirkungsvoll; ggf. mit B3 koppeln |
+| 2 | **Timing-Fix (Finding B)** | Instrumentierung ✓ (2026-06-18); Timer-Vorziehen/Limit-Orders noch offen |
 | 3 | **B3 Trending abschalten + Refokus (Finding C)** | verkürzt Kette, schärft Fokus |
-| 4 | **B2 EMA-8-Signal** | braucht B1 (Candles); „nur anzeigen vs. Signal-Logik" |
+| 4 | **B2 EMA-Signal** | Trend-Read EMA10/20/50 ✓ (2026-06-18, ohne Proxy); exaktes EMA 8 braucht Candles (B1) |
 | 5 | **B4 Intraday-Opportunismus (Finding D)** | Limit-Orders sofort (mit Timing-Fix); aktive Schleife nach B1+B2 |
 | 6 | **C1 Embed/Refresh** | braucht B1 |
 | 7 | **agent-reach Recherche-Anreicherung** | optional, nach B1; Cookie-/VPS-Betrieb klären |
 | 8 | **C2 Mr-Ape-Chat read-only** | Listener muss Dialog persistieren |
 | 9 | **C4 Session/Tick-Verwaltung im UI** | privilegierter Host-Pfad nötig |
 | 10 | **C3 Setup-Assistent** | erst bei realem Public-Self-Host |
-| 11 | **D1 Claude-Health-Check + Telegram-Alert (Finding E)** | vorgezogen: mit/nach Session-2-Instrumentierung; Telegram-Hinweis bei langer/ausbleibender Antwort + Usage-Limit |
+| 11 | **D1 Claude-Health-Check + Telegram-Alert (Finding E)** | ✓ (2026-06-18): Timeout + Limit-/Slow-Alert in `invoke.ts`, verdrahtet in Kür/Manager/Scan |
 
 ### Vorgeschlagene Session-Sequenz
 
