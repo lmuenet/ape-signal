@@ -2,13 +2,12 @@
 import { loadEnv, requireFinnhub, requireRedditApi } from "../config/env";
 import { fetchApewisdomSnapshot, fetchNextEarnings, fetchTradingViewTrend } from "../core/ape-intel";
 import { createTelegramClient } from "../telegram/client";
-import { spawnClaudeRunner } from "../claude/invoke";
 import { runScan, type ScanDeps } from "./pipeline";
 import { fetchRsLongShort, fetchReadyToTrend, fetchStrongDaily, fetchMomentum } from "./rsScreener";
 import { createRedditApiRunner } from "../reddit/redditApi";
 import { crawlReddit, type RedditCandidate } from "../reddit/crawl";
 import { fetchEarningsToday } from "./earnings";
-import { createClaudeRunner } from "../claude/invoke";
+import { createClaudeRunner, resolveWatchdog } from "../claude/invoke";
 import { runKuer } from "../paper/select";
 import { saveKuerArtifact } from "../paper/kuerArtifact";
 import { fetchTickQuotes } from "../paper/quotes";
@@ -36,9 +35,19 @@ async function main(): Promise<void> {
     chatId: env.telegramChatId,
   });
 
+  // Watchdog for every autonomous Claude call: a hard timeout (kill) plus an
+  // interim "still working" Telegram ping, so a hanging or usage-limited backend
+  // is visible instead of a silent gap (Finding E / D1).
+  const watchdog = resolveWatchdog(process.env);
+  const onSlow = (info: { label: string; elapsedMs: number }): void => {
+    void telegram
+      .sendMessage(`⏳ Claude: „${info.label}" läuft noch (seit ${Math.round(info.elapsedMs / 60_000)} min) — evtl. ausgelastet/limitiert.`)
+      .catch(() => {});
+  };
+
   const deps: ScanDeps = {
     fetchSnapshot: () => fetchApewisdomSnapshot(fetch),
-    claudeRunner: spawnClaudeRunner,
+    claudeRunner: createClaudeRunner({ label: "Scan-Challenge", onSlow, ...watchdog }),
     send: (text) => telegram.sendMessage(text),
     // Live price + 1W/1M/3M trend via the TradingView scanner (free, no key,
     // reachable from the VPS). A failure degrades to "no prices" in the pipeline.
@@ -95,9 +104,9 @@ async function main(): Promise<void> {
         appendJournal: (title, body) => appendJournal(dir, title, body),
         readJournalTail: () => readJournalTail(dir),
         fetchQuotes: (tickers) => fetchTickQuotes(tickers, fetch),
-        researchRunner: createClaudeRunner({ model: "sonnet", allowedTools: ["WebSearch", "Skill"] }),
-        debateRunner: createClaudeRunner({ model: "sonnet" }),
-        decideRunner: createClaudeRunner({ model: "opus" }),
+        researchRunner: createClaudeRunner({ model: "sonnet", allowedTools: ["WebSearch", "Skill"], label: "Research", onSlow, ...watchdog }),
+        debateRunner: createClaudeRunner({ model: "sonnet", label: "Debatte", onSlow, ...watchdog }),
+        decideRunner: createClaudeRunner({ model: "opus", label: "Entscheidung", onSlow, ...watchdog }),
         send: (text) => telegram.sendMessage(text),
         saveKuer: (a) => saveKuerArtifact(dir, a),
         berlinDay,

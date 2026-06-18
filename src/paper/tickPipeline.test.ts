@@ -3,6 +3,7 @@ import { runTick, type TickDeps } from "./tickPipeline";
 import { berlinDay, berlinStamp } from "./store";
 import { freshHealth, type HealthState } from "./health";
 import { freshPortfolio, type EntryOrder, type Portfolio, type Position, type QuoteMap } from "./types";
+import { ClaudeLimitError } from "../claude/invoke";
 
 const NOW = new Date("2026-06-09T14:00:00Z"); // 16:00 Berlin, US session
 
@@ -285,6 +286,14 @@ describe("quote-failure hardening (Lebenszeichen spec)", () => {
     (deps.claudeRunner as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("boom"));
     await runTick({ isClose: false }, deps);
     expect(sent.some((m) => m.includes("⚠️ Mr Ape nicht erreichbar"))).toBe(true);
+  });
+
+  it("posts a specific Claude-limit alert when the manager is rate-limited", async () => {
+    const p: Portfolio = { ...freshPortfolio(900), orders: [order()] };
+    const { deps, sent } = makeDeps(p, { TSLA: { close: 200, changePct: 0, high: 201, low: 199 } });
+    (deps.claudeRunner as ReturnType<typeof vi.fn>).mockRejectedValue(new ClaudeLimitError("usage limit", "Manager"));
+    await runTick({ isClose: false }, deps);
+    expect(sent.some((m) => m.includes("Claude limitiert"))).toBe(true);
   });
 
   it("a saveHealth failure never breaks the tick", async () => {

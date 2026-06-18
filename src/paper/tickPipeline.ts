@@ -18,6 +18,7 @@ import { parseTickResponse } from "./decision";
 import { healthLine, recordQuoteFailure, recordQuoteSuccess, type HealthState } from "./health";
 import { WAKE, type Portfolio, type QuoteMap, type TickEvent } from "./types";
 import type { Language } from "../core/language";
+import { ClaudeError } from "../claude/invoke";
 
 export interface TickDeps {
   loadPortfolio: () => Portfolio;
@@ -195,8 +196,14 @@ export async function runTick(opts: TickOptions, deps: TickDeps): Promise<void> 
     } catch (err) {
       // Stops stay where they are — the deterministic engine keeps protecting.
       console.error(`[tick] manager call failed, keeping current stops: ${err instanceof Error ? err.message : String(err)}`);
+      const msg =
+        err instanceof ClaudeError && err.kind === "limit"
+          ? "⚠️ Claude limitiert (Usage-Limit) — Mr Ape pausiert; Stops bleiben unverändert (deterministischer Schutz läuft weiter)."
+          : err instanceof ClaudeError && err.kind === "timeout"
+            ? "⚠️ Mr Ape: Zeitüberschreitung beim Manager-Tick — Stops bleiben unverändert."
+            : "⚠️ Mr Ape nicht erreichbar (Manager-Call fehlgeschlagen) — Stops bleiben unverändert.";
       try {
-        await deps.send("⚠️ Mr Ape nicht erreichbar (Manager-Call fehlgeschlagen) — Stops bleiben unverändert.");
+        await deps.send(msg);
       } catch (sendErr) {
         console.error(`[tick] failed to send manager-failure alert: ${sendErr instanceof Error ? sendErr.message : String(sendErr)}`);
       }

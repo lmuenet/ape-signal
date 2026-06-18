@@ -11,6 +11,7 @@ import { parseDebate, parseDecision, parseDossier, type Debate, type Dossier } f
 import { GUARDRAILS, type Portfolio, type QuoteMap } from "./types";
 import type { KuerArtifact } from "./kuerArtifact";
 import type { Language } from "../core/language";
+import { ClaudeError } from "../claude/invoke";
 
 export interface KuerDeps {
   loadPortfolio: () => Portfolio;
@@ -106,17 +107,44 @@ export async function runKuer(opts: KuerOptions, deps: KuerDeps): Promise<void> 
     }
   }
 
-  const raw = await deps.decideRunner(
-    buildDecisionPrompt({
-      day,
-      dossierBlock: renderDossier(dossier),
-      debateBlock: renderDebate(debate),
-      quotesBlock: renderQuotes(quotes),
-      portfolioBlock: renderPortfolio(portfolio, quotes),
-      journalTail,
-      language: deps.language ?? "de",
-    }),
-  );
+  let raw: string;
+  try {
+    raw = await deps.decideRunner(
+      buildDecisionPrompt({
+        day,
+        dossierBlock: renderDossier(dossier),
+        debateBlock: renderDebate(debate),
+        quotesBlock: renderQuotes(quotes),
+        portfolioBlock: renderPortfolio(portfolio, quotes),
+        journalTail,
+        language: deps.language ?? "de",
+      }),
+    );
+  } catch (err) {
+    // A limit/timeout on the decider is the make-or-break failure: say so
+    // explicitly (Finding E) instead of the generic scan-failure alert, and
+    // skip the day cleanly — never a guessed trade.
+    if (err instanceof ClaudeError && (err.kind === "limit" || err.kind === "timeout")) {
+      trySaveKuer(deps, {
+        day,
+        createdAt: now.toISOString(),
+        scanSummary: opts.scanSummary,
+        dossier,
+        debate,
+        decisionJournal: null,
+        orders: [],
+        rejected: [],
+        status: err.kind === "limit" ? "skipped-limit" : "skipped-timeout",
+      });
+      await deps.send(
+        err.kind === "limit"
+          ? "⚠️ Mr Ape: Claude ist aktuell limitiert (Usage-Limit) — Kandidatenkür heute ausgefallen. Sobald das Limit zurückgesetzt ist, geht es wieder weiter."
+          : "⚠️ Mr Ape: Claude hat zu lange gebraucht (Timeout) — Kandidatenkür heute ausgefallen. Morgen wieder.",
+      );
+      return;
+    }
+    throw err;
+  }
   const decision = parseDecision(raw);
   if (!decision) {
     console.error("[kuer] unreadable decision, skipping today (no guessed trades).");
