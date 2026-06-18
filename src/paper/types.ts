@@ -10,6 +10,12 @@ export interface TickQuote {
   changePct: number;
   high: number; // day high so far
   low: number; // day low so far
+  // TradingView scanner indicator columns (free, no proxy needed). Optional:
+  // absent when the scanner doesn't return them (degraded source). See trend.ts.
+  ema10?: number;
+  ema20?: number;
+  ema50?: number;
+  rsi?: number;
 }
 
 export type QuoteMap = Record<string, TickQuote>;

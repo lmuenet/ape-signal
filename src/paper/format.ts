@@ -1,6 +1,7 @@
 // src/paper/format.ts — plain-text rendering of the depot for prompts,
 // Telegram messages and the journal. Pure string builders.
 import { equity, liquidationPrice, positionPnl } from "./engine";
+import { formatTech } from "./trend";
 import type { Adjustment, EntryOrder, Portfolio, Position, QuoteMap, TickEvent } from "./types";
 
 const usd = (n: number) => `${n >= 0 ? "" : "-"}$${Math.abs(n).toFixed(2)}`;
@@ -48,7 +49,7 @@ export function renderQuotes(quotes: QuoteMap): string {
   return entries
     .map(
       ([t, q]) =>
-        `${t}: ${q.close} (heute ${sign(q.changePct)}%, Tageshoch ${q.high}, Tagestief ${q.low})`,
+        `${t}: ${q.close} (heute ${sign(q.changePct)}%, Tageshoch ${q.high}, Tagestief ${q.low})${formatTech(q)}`,
     )
     .join("\n");
 }
