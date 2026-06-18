@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  addBerlinDays,
   adminAdjust,
   applyAdjustments,
   applyTick,
@@ -263,6 +264,56 @@ describe("placeOrders — guardrails", () => {
     );
     expect(accepted[0].entryType).toBe("limit");
     expect(accepted[0].limitPrice).toBe(97);
+  });
+});
+
+describe("addBerlinDays", () => {
+  it("adds calendar days across month and year boundaries", () => {
+    expect(addBerlinDays("2026-06-09", 0)).toBe("2026-06-09");
+    expect(addBerlinDays("2026-06-09", 1)).toBe("2026-06-10");
+    expect(addBerlinDays("2026-06-30", 1)).toBe("2026-07-01");
+    expect(addBerlinDays("2026-12-31", 1)).toBe("2027-01-01");
+    expect(addBerlinDays("2026-06-09", 4)).toBe("2026-06-13");
+  });
+});
+
+describe("placeOrders — multi-day TTL (Stufe 1)", () => {
+  const quotes: QuoteMap = { NVDA: q(100, 101, 99) };
+  const base = { ticker: "NVDA", side: "long" as const, stake: 150, leverage: 1, entry: 97, stopLoss: 94, thesis: "t" };
+
+  it("sets expiresOn ttlDays-1 days out and clamps/rounds to [1,5]", () => {
+    const r2 = placeOrders(freshPortfolio(1000), [{ ...base, ttlDays: 2 }], quotes, { now: NOW, day: DAY });
+    expect(r2.accepted[0].expiresOn).toBe("2026-06-10");
+    const r99 = placeOrders(freshPortfolio(1000), [{ ...base, ttlDays: 99 }], quotes, { now: NOW, day: DAY });
+    expect(r99.accepted[0].expiresOn).toBe(addBerlinDays(DAY, 4)); // clamped to 5 days → +4
+    const rRound = placeOrders(freshPortfolio(1000), [{ ...base, ttlDays: 2.6 }], quotes, { now: NOW, day: DAY });
+    expect(rRound.accepted[0].expiresOn).toBe(addBerlinDays(DAY, 2)); // round(2.6)=3 → +2
+  });
+
+  it("leaves expiresOn undefined for ttlDays<=1 or absent (same-day, unchanged)", () => {
+    expect(placeOrders(freshPortfolio(1000), [{ ...base, ttlDays: 1 }], quotes, { now: NOW, day: DAY }).accepted[0].expiresOn).toBeUndefined();
+    expect(placeOrders(freshPortfolio(1000), [{ ...base, ttlDays: 0 }], quotes, { now: NOW, day: DAY }).accepted[0].expiresOn).toBeUndefined();
+    expect(placeOrders(freshPortfolio(1000), [base], quotes, { now: NOW, day: DAY }).accepted[0].expiresOn).toBeUndefined();
+  });
+
+  it("counts a multi-day order against the budget on its creation day only", () => {
+    const { portfolio } = placeOrders(freshPortfolio(1000), [{ ...base, ttlDays: 3 }], quotes, { now: NOW, day: DAY });
+    expect(tradesPlacedToday(portfolio, DAY)).toBe(1);
+    expect(tradesPlacedToday(portfolio, "2026-06-10")).toBe(0);
+  });
+
+  it("survives the close of its creation day and expires once expiresOn is due", () => {
+    // Limit far below the range so it never fills on a non-first tick.
+    const multi = order({ limitPrice: 90, expiresOn: "2026-06-10" });
+    const prev = { NVDA: q(102, 103, 100.5) };
+    const p = withLastTick({ ...freshPortfolio(800), orders: [multi] }, prev);
+    const d0 = applyTick(p, { NVDA: q(101, 103, 100.5) }, { now: NOW, day: DAY, isClose: true });
+    expect(d0.events).toHaveLength(0); // not yet due → survives the creation-day close
+    expect(d0.portfolio.orders).toHaveLength(1);
+    const due = expireDayOrders(d0.portfolio, "2026-06-10"); // pure expiry on the due day
+    expect(due.events[0].kind).toBe("order-expired");
+    expect(due.portfolio.orders).toHaveLength(0);
+    expect(due.portfolio.balance).toBe(1000); // stake refunded
   });
 });
 

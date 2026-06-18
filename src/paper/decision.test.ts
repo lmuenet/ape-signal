@@ -93,6 +93,22 @@ describe("parseDecision", () => {
   it("an empty trades array is a valid no-trade decision", () => {
     expect(parseDecision('{"trades": [], "journal": "heute nichts"}')?.trades).toEqual([]);
   });
+
+  it("passes through optional ttlDays (multi-day TTL), undefined when absent or junk", () => {
+    const d = parseDecision(
+      JSON.stringify({
+        trades: [
+          { ticker: "NVDA", side: "long", stake: 200, entry: 95, stopLoss: 90, ttlDays: 3 },
+          { ticker: "TSLA", side: "long", stake: 100, entry: 95, stopLoss: 90, ttlDays: "soon" },
+          { ticker: "AAPL", side: "long", stake: 100, entry: 95, stopLoss: 90 },
+        ],
+        journal: "",
+      }),
+    );
+    expect(d?.trades[0]?.ttlDays).toBe(3);
+    expect(d?.trades[1]?.ttlDays).toBeUndefined();
+    expect(d?.trades[2]?.ttlDays).toBeUndefined();
+  });
 });
 
 describe("parseTickResponse", () => {

@@ -16,6 +16,16 @@ import {
   type TradeDecision,
 } from "./types";
 
+/**
+ * Add `n` calendar days to a Berlin trading-day string (YYYY-MM-DD). Pure date
+ * arithmetic on the date itself (UTC midnight) — no timezone drift, since the
+ * input is already a plain Berlin date. Used for multi-day order expiry (TTL).
+ */
+export function addBerlinDays(day: string, n: number): string {
+  const ms = Date.parse(`${day}T00:00:00Z`) + n * 86_400_000;
+  return new Date(ms).toISOString().slice(0, 10);
+}
+
 /** P&L of a position at a price, capped at -stake (margin is the max loss). */
 export function positionPnl(pos: Position, price: number): number {
   const raw =
@@ -172,7 +182,7 @@ export function applyTick(p: Portfolio, quotes: QuoteMap, opts: TickOptions): Ti
         continue;
       }
     }
-    if (opts.isClose && order.day <= opts.day) {
+    if (opts.isClose && (order.expiresOn ?? order.day) <= opts.day) {
       balance += order.stake; // release the reserved margin
       events.push({ kind: "order-expired", order });
     } else {
@@ -247,7 +257,7 @@ export function expireDayOrders(p: Portfolio, day: string): TickOutcome {
   const events: TickEvent[] = [];
   let balance = p.balance;
   const orders = p.orders.filter((order) => {
-    if (order.day <= day) {
+    if ((order.expiresOn ?? order.day) <= day) {
       balance += order.stake; // release the reserved margin
       events.push({ kind: "order-expired", order });
       return false;
@@ -324,6 +334,11 @@ export function placeOrders(
     const wakeAbove = typeof d.wakeAbove === "number" && d.wakeAbove > reference ? d.wakeAbove : undefined;
     const wakeBelow = typeof d.wakeBelow === "number" && d.wakeBelow > 0 && d.wakeBelow < reference ? d.wakeBelow : undefined;
 
+    // Multi-day TTL (Stufe 1): clamp to [1, max]; only future-dated orders carry
+    // an expiresOn — same-day orders stay undefined (= today, the existing behaviour).
+    const ttlDays = Math.min(Math.max(Math.round(d.ttlDays ?? 1) || 1, 1), GUARDRAILS.maxTtlDays);
+    const expiresOn = ttlDays > 1 ? addBerlinDays(opts.day, ttlDays - 1) : undefined;
+
     const order: EntryOrder = {
       id: `${ticker}-${opts.day}-${placedBefore + accepted.length + 1}`,
       ticker,
@@ -336,6 +351,7 @@ export function placeOrders(
       takeProfit: d.takeProfit,
       wakeAbove,
       wakeBelow,
+      expiresOn,
       thesis: d.thesis ?? "",
       createdAt: opts.now,
       day: opts.day,

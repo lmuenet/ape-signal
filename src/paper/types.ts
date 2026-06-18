@@ -40,7 +40,18 @@ export interface EntryOrder {
   wakeBelow?: number;
   thesis: string;
   createdAt: string; // ISO
-  day: string; // Berlin trading day (YYYY-MM-DD) — expiry day
+  day: string; // Berlin trading day (YYYY-MM-DD) — creation day, counts towards the daily budget
+  /**
+   * Berlin day (YYYY-MM-DD) the order expires at its Close tick. Absent → same-day
+   * (= `day`). A multi-day order (ttlDays > 1) sits beyond `day` but still counts
+   * towards the budget on its `day` only (see tradesPlacedToday).
+   */
+  expiresOn?: string;
+  /**
+   * Mutually-exclusive ladder group (Stufe 1): orders sharing this id are rungs of
+   * one conviction — when one fills, the engine cancels the others (never double-enters).
+   */
+  rungGroup?: string;
 }
 
 /** An open CFD-style position: notional = stake × leverage. */
@@ -101,6 +112,8 @@ export const GUARDRAILS = {
   /** Max stake per trade as a fraction of current equity (play-money depot). */
   maxStakeFraction: 0.2,
   maxTradesPerDay: 3,
+  /** Max trading days an entry order may stay valid (Stufe 1 multi-day TTL). */
+  maxTtlDays: 5,
 } as const;
 
 /**
@@ -137,6 +150,8 @@ export interface TradeDecision {
   takeProfit?: number;
   wakeAbove?: number;
   wakeBelow?: number;
+  /** Trading days the order stays valid (1–5, default 1 = today only). Stufe 1. */
+  ttlDays?: number;
   thesis: string;
 }
 
