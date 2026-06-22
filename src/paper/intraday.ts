@@ -1,13 +1,14 @@
-// src/paper/intraday.ts — the GATED intraday opportunism opening (Stufe 3).
-// A deterministic Setup-Radar trigger (setupRadar.ts) may wake ONE focused LLM
-// call to place AT MOST ONE limit order on the triggered ticker, inside a
-// separate budget tier and behind ENABLE_INTRADAY_OPPORTUNISM. Disciplined by
-// design: all gates are deterministic, entries are limit-only, and an
-// unreadable / declined / limited answer means NO trade (never a guess).
+// src/paper/intraday.ts — the GATED intraday opportunism opening (Stufe 3) as a
+// two-stage Mini-Kür: a deterministic Setup-Radar trigger (setupRadar.ts) wakes a
+// focused Sonnet research step, then OPUS decides AT MOST ONE limit order on the
+// triggered ticker, inside a separate budget tier and behind ENABLE_INTRADAY_OPPORTUNISM.
+// Disciplined by design: all gates are deterministic, entries are limit-only, and an
+// unreadable / declined / limited answer means NO trade (never a guess). The process is
+// mirrored to Telegram (start-ping + a GUARANTEED outcome) so it is visible live.
 import { intradayTradesPlacedToday, placeOrders, tradesPlacedToday } from "./engine";
-import { renderPortfolio, renderQuotes } from "./format";
-import { buildIntradayPrompt } from "./prompts";
-import { parseDecision } from "./decision";
+import { renderPortfolio, renderQuotes, renderTrackRecord } from "./format";
+import { buildIntradayDossierPrompt, buildIntradayPrompt } from "./prompts";
+import { parseDecision, parseDossier, type Dossier } from "./decision";
 import { GUARDRAILS, type Portfolio, type QuoteMap, type SetupTrigger } from "./types";
 import type { Language } from "../core/language";
 import { ClaudeError } from "../claude/invoke";
@@ -18,8 +19,10 @@ export interface IntradayDeps {
   appendJournal: (title: string, body: string) => void;
   readJournalTail: () => string;
   fetchQuotes: (tickers: string[]) => Promise<QuoteMap>;
-  /** Sonnet runner for the single intraday decision. */
-  runner: (prompt: string) => Promise<string>;
+  /** Sonnet with WebSearch — focused research on the triggered ticker. */
+  researchRunner: (prompt: string) => Promise<string>;
+  /** Opus — the decider for the mini-Kür. */
+  decideRunner: (prompt: string) => Promise<string>;
   send: (text: string) => Promise<void>;
   now?: () => Date;
   berlinDay: (d: Date) => string;
@@ -38,11 +41,18 @@ export function intradayGateOpen(p: Portfolio, day: string, ticker: string): boo
   return true;
 }
 
+/** Render the single-ticker mini-dossier (or a degrade note when research yielded nothing). */
+function renderChanceDossier(d: Dossier | null, ticker: string): string {
+  const c = d?.candidates.find((x) => x.ticker === ticker.toUpperCase());
+  if (!c) return "(Research fehlgeschlagen — entscheide auf Trigger und Kursen.)";
+  return `${c.ticker}: ${c.angle}\n  Katalysator: ${c.catalyst}\n  Sentiment: ${c.sentiment}`;
+}
+
 /**
- * Consider opening one intraday limit order for a fired setup trigger. Best-effort
- * and self-contained (loads + saves the portfolio). Posts to Telegram only when an
- * order is actually placed; declines/rejections are journalled quietly (the trigger
- * itself was already surfaced by the radar).
+ * Consider opening one intraday limit order for a fired setup trigger — as a two-stage
+ * mini-Kür (Sonnet research → Opus decide). Best-effort and self-contained (loads + saves
+ * the portfolio). Once the gate is open, the process is ALWAYS surfaced to Telegram: a
+ * start-ping that it is live, then a guaranteed outcome (order, no-trade, or not-decided).
  */
 export async function runIntradayOpportunity(trigger: SetupTrigger, deps: IntradayDeps): Promise<void> {
   const now = (deps.now ?? (() => new Date()))();
@@ -53,54 +63,82 @@ export async function runIntradayOpportunity(trigger: SetupTrigger, deps: Intrad
   let portfolio = deps.loadPortfolio();
   if (!intradayGateOpen(portfolio, day, ticker)) return;
 
+  // Start-Ping: signalisiert, dass der Mini-Kür-Prozess live läuft (best-effort).
+  try {
+    await deps.send(`🦍 Mr Ape prüft Intraday-Chance ${ticker} (${trigger.note}) …`);
+  } catch (err) {
+    console.error(`[intraday] start-ping send failed: ${err instanceof Error ? err.message : String(err)}`);
+  }
+
   let quotes: QuoteMap;
   try {
     quotes = await deps.fetchQuotes([ticker]);
   } catch (err) {
     console.error(`[intraday] quote fetch failed for ${ticker}: ${err instanceof Error ? err.message : String(err)}`);
+    await deps.send(`⚠️ Mr Ape — Intraday ${ticker}: Kurse nicht verfügbar, übersprungen.`);
     return;
   }
-  if (!quotes[ticker]) return;
+  if (!quotes[ticker]) {
+    await deps.send(`⚠️ Mr Ape — Intraday ${ticker}: keine Kurse, übersprungen.`);
+    return;
+  }
 
+  const trackRecordBlock = renderTrackRecord(portfolio.history, 8);
+  const journalTail = deps.readJournalTail();
+
+  // Stufe 1: Research (Sonnet). Scheitert sie → sanfte Degradation, Opus entscheidet trotzdem.
+  let dossier: Dossier | null = null;
+  try {
+    dossier = parseDossier(
+      await deps.researchRunner(
+        buildIntradayDossierPrompt({
+          stamp, ticker, triggerLabel: trigger.note, price: trigger.price,
+          quotesBlock: renderQuotes(quotes), journalTail, language: deps.language ?? "de",
+        }),
+      ),
+    );
+  } catch (err) {
+    console.error(`[intraday] research failed, deciding on trigger+quotes: ${err instanceof Error ? err.message : String(err)}`);
+  }
+
+  // Stufe 2: Entscheidung (Opus).
   let raw: string;
   try {
-    raw = await deps.runner(
+    raw = await deps.decideRunner(
       buildIntradayPrompt({
-        stamp,
-        ticker,
-        triggerLabel: trigger.note,
-        price: trigger.price,
-        portfolioBlock: renderPortfolio(portfolio, quotes),
-        quotesBlock: renderQuotes(quotes),
-        journalTail: deps.readJournalTail(),
-        language: deps.language ?? "de",
+        stamp, ticker, triggerLabel: trigger.note, price: trigger.price,
+        portfolioBlock: renderPortfolio(portfolio, quotes), quotesBlock: renderQuotes(quotes),
+        dossierBlock: renderChanceDossier(dossier, ticker), trackRecordBlock,
+        journalTail, language: deps.language ?? "de",
       }),
     );
   } catch (err) {
-    // Limit/timeout → silent degradation (deterministic protection keeps running).
-    const kind = err instanceof ClaudeError ? err.kind : "error";
-    console.error(`[intraday] runner ${kind} for ${ticker}: ${err instanceof Error ? err.message : String(err)}`);
+    const why = err instanceof ClaudeError && err.kind === "limit"
+      ? "Usage-Limit"
+      : err instanceof ClaudeError && err.kind === "timeout"
+        ? "Timeout"
+        : "Fehler";
+    deps.appendJournal(`Intraday ${stamp.slice(11)} — ${ticker}`, `Nicht entschieden (${why}).`);
+    await deps.send(`⚠️ Mr Ape — Intraday ${ticker}: nicht entschieden (${why}).`);
     return;
   }
 
   const decision = parseDecision(raw);
   const trade = decision?.trades[0];
   if (!decision || !trade) {
-    // No trade is a full answer — keep it quiet, just journal the reasoning if any.
-    const note = decision?.journal?.trim();
-    if (note) deps.appendJournal(`Intraday ${stamp.slice(11)} — ${ticker}`, `Kein Trade. ${note}`);
+    const note = decision?.journal?.trim() || "kein klares Setup.";
+    deps.appendJournal(`Intraday ${stamp.slice(11)} — ${ticker}`, `Kein Trade. ${note}`);
+    await deps.send(`🦍 Mr Ape — Intraday ${ticker}: kein Trade. ${note}`);
     return;
   }
   if (trade.entry === "market") {
-    deps.appendJournal(`Intraday ${stamp.slice(11)} — ${ticker}`, "Vorschlag verworfen: nur Limit-Einstiege erlaubt (kein Market).");
+    deps.appendJournal(`Intraday ${stamp.slice(11)} — ${ticker}`, "Verworfen: nur Limit-Einstiege erlaubt.");
+    await deps.send(`🦍 Mr Ape — Intraday ${ticker}: Vorschlag verworfen (nur Limit erlaubt).`);
     return;
   }
 
   const { portfolio: updated, accepted, rejected } = placeOrders(
-    portfolio,
-    [{ ...trade, ticker }],
-    quotes,
-    { now: now.toISOString(), day, source: "intraday" },
+    portfolio, [{ ...trade, ticker }], quotes, { now: now.toISOString(), day, source: "intraday" },
   );
   portfolio = updated;
   deps.savePortfolio(portfolio);
@@ -108,6 +146,7 @@ export async function runIntradayOpportunity(trigger: SetupTrigger, deps: Intrad
   if (accepted.length === 0) {
     const reason = rejected[0]?.reason ?? "abgelehnt";
     deps.appendJournal(`Intraday ${stamp.slice(11)} — ${ticker}`, `Order abgelehnt (${reason}).`);
+    await deps.send(`🦍 Mr Ape — Intraday ${ticker}: Order abgelehnt (${reason}).`);
     return;
   }
 
