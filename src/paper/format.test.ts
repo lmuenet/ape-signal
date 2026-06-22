@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { describeAdjustment, formatDailySummary, formatManagerNote, renderPortfolio, renderTrackRecord } from "./format";
+import { describeAdjustment, formatDailySummary, formatDecisionMirror, formatManagerNote, renderPortfolio, renderTrackRecord } from "./format";
 import type { Adjustment, ClosedTrade, EntryOrder, Portfolio, Position, QuoteMap, TickEvent } from "./types";
+import type { Debate, Dossier } from "./decision";
 
 const pos: Position = {
   id: "P1", ticker: "AAPL", side: "long", stake: 200, leverage: 2,
@@ -36,6 +37,31 @@ describe("renderTrackRecord", () => {
     const many = Array.from({ length: 10 }, (_, i) => ct({ id: String(i), ticker: `T${i}` }));
     const out = renderTrackRecord(many, 3);
     expect(out.split("\n").filter((l) => l.includes("long")).length).toBe(3);
+  });
+});
+
+describe("formatDecisionMirror", () => {
+  const dossier: Dossier = {
+    candidates: [{ ticker: "AMD", angle: "Long auf Pullback", catalyst: "Earnings", sentiment: "bullisch" }],
+    marketContext: "SPY ruhig, VIX niedrig",
+  };
+  const debate: Debate = { debates: [{ ticker: "AMD", bull: "Trend intakt", bear: "RSI hoch" }] };
+
+  it("merges dossier + debate into one line per candidate plus market line", () => {
+    const out = formatDecisionMirror(dossier, debate);
+    expect(out).toContain("Research & Debatte");
+    expect(out).toContain("AMD: Long auf Pullback");
+    expect(out).toContain("Bull Trend intakt / Bear RSI hoch");
+    expect(out).toContain("Marktlage: SPY ruhig, VIX niedrig");
+  });
+  it("renders angle only when a candidate has no debate", () => {
+    const out = formatDecisionMirror(dossier, { debates: [] });
+    expect(out).toContain("AMD: Long auf Pullback");
+    expect(out).not.toContain("Bull");
+  });
+  it("returns empty string when there is nothing to mirror", () => {
+    expect(formatDecisionMirror(null, null)).toBe("");
+    expect(formatDecisionMirror({ candidates: [], marketContext: "" }, null)).toBe("");
   });
 });
 

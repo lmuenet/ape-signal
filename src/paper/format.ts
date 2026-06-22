@@ -3,6 +3,7 @@
 import { equity, liquidationPrice, positionPnl } from "./engine";
 import { formatTech } from "./trend";
 import type { Adjustment, ClosedTrade, EntryOrder, Portfolio, Position, QuoteMap, TickEvent } from "./types";
+import type { Debate, Dossier } from "./decision";
 
 const usd = (n: number) => `${n >= 0 ? "" : "-"}$${Math.abs(n).toFixed(2)}`;
 const sign = (n: number) => `${n >= 0 ? "+" : ""}${n.toFixed(2)}`;
@@ -170,6 +171,21 @@ export function formatDailySummary(
   ];
   if (opts.healthLine !== undefined) lines.push("", opts.healthLine);
   return lines.join("\n");
+}
+
+/** Condensed Telegram mirror of the Kür's research dossier + bull/bear debate. */
+export function formatDecisionMirror(dossier: Dossier | null, debate: Debate | null): string {
+  if (!dossier && !debate) return "";
+  const candidates = dossier?.candidates ?? [];
+  const lines: string[] = [];
+  for (const c of candidates) {
+    const d = debate?.debates.find((x) => x.ticker === c.ticker);
+    lines.push(d ? `${c.ticker}: ${c.angle} · Bull ${d.bull} / Bear ${d.bear}` : `${c.ticker}: ${c.angle}`);
+  }
+  if (lines.length === 0) return "";
+  const header = [`🦍 Mr Ape — Research & Debatte (${new Date().toISOString().slice(0, 10)})`, ""];
+  if (dossier && dossier.marketContext.trim() !== "") lines.push("", `Marktlage: ${dossier.marketContext.trim()}`);
+  return [...header, ...lines].join("\n");
 }
 
 /** Reflection block: the last `limit` closed trades as one line each (for the decider prompt). */
