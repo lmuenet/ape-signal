@@ -65,7 +65,19 @@ describe("buildDecisionPrompt", () => {
   });
 });
 
-import { buildAdminPrompt, buildDossierPrompt, buildIntradayPrompt } from "./prompts";
+import { buildAdminPrompt, buildDossierPrompt, buildIntradayDossierPrompt, buildIntradayPrompt } from "./prompts";
+
+describe("buildIntradayDossierPrompt (Mini-Kür Research)", () => {
+  it("builds a focused single-ticker intraday research prompt", () => {
+    const out = buildIntradayDossierPrompt({
+      stamp: "2026-06-09 17:00", ticker: "AMD", triggerLabel: "EMA10×EMA20 ↑",
+      price: 100, quotesBlock: "AMD: 100", journalTail: "", language: "de",
+    });
+    expect(out).toContain("AMD");
+    expect(out).toContain("RESEARCH");
+    expect(out).toContain('"candidates"'); // Dossier-Format, parsebar via parseDossier
+  });
+});
 
 describe("buildIntradayPrompt (Stufe 3)", () => {
   const base = {
