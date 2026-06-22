@@ -38,7 +38,7 @@ describe("buildDecisionPrompt", () => {
   it("offers wakeAbove/wakeBelow in the trade contract", () => {
     const p = buildDecisionPrompt({
       day: "2026-06-11", dossierBlock: "", debateBlock: "", quotesBlock: "",
-      portfolioBlock: "", journalTail: "",
+      portfolioBlock: "", trackRecordBlock: "", journalTail: "",
     });
     expect(p).toContain("wakeAbove");
     expect(p).toContain("Wake-Up-Band");
@@ -47,20 +47,43 @@ describe("buildDecisionPrompt", () => {
   it("steers towards laddered limit entries and multi-day TTL (Stufe 1)", () => {
     const p = buildDecisionPrompt({
       day: "2026-06-11", dossierBlock: "", debateBlock: "", quotesBlock: "",
-      portfolioBlock: "", journalTail: "",
+      portfolioBlock: "", trackRecordBlock: "", journalTail: "",
     });
     expect(p).toContain("BEVORZUGE Limit-Einstiege");
     expect(p).toContain("LEITER");
     expect(p).toContain("ttlDays");
   });
+
+  it("includes the track-record block in the decision prompt", () => {
+    const p = buildDecisionPrompt({
+      day: "2026-06-09", dossierBlock: "d", debateBlock: "x", quotesBlock: "q",
+      portfolioBlock: "p", trackRecordBlock: "## Bisheriger Track-Record (Lehren)\nAMD long …",
+      journalTail: "", language: "de",
+    });
+    expect(p).toContain("Bisheriger Track-Record (Lehren)");
+    expect(p).toContain("AMD long");
+  });
 });
 
-import { buildAdminPrompt, buildDossierPrompt, buildIntradayPrompt } from "./prompts";
+import { buildAdminPrompt, buildDossierPrompt, buildIntradayDossierPrompt, buildIntradayPrompt } from "./prompts";
+
+describe("buildIntradayDossierPrompt (Mini-Kür Research)", () => {
+  it("builds a focused single-ticker intraday research prompt", () => {
+    const out = buildIntradayDossierPrompt({
+      stamp: "2026-06-09 17:00", ticker: "AMD", triggerLabel: "EMA10×EMA20 ↑",
+      price: 100, quotesBlock: "AMD: 100", journalTail: "", language: "de",
+    });
+    expect(out).toContain("AMD");
+    expect(out).toContain("RESEARCH");
+    expect(out).toContain('"candidates"'); // Dossier-Format, parsebar via parseDossier
+  });
+});
 
 describe("buildIntradayPrompt (Stufe 3)", () => {
   const base = {
     stamp: "2026-06-09 17:00", ticker: "AMD", triggerLabel: "EMA10×EMA20 ↑ — Pullback",
-    price: 100, portfolioBlock: "(depot)", quotesBlock: "(quotes)", journalTail: "",
+    price: 100, portfolioBlock: "(depot)", quotesBlock: "(quotes)",
+    dossierBlock: "(dossier)", trackRecordBlock: "(track-record)", journalTail: "",
   };
   it("states the trigger, the limit-only rule and the one-trade cap", () => {
     const p = buildIntradayPrompt(base);
@@ -73,13 +96,22 @@ describe("buildIntradayPrompt (Stufe 3)", () => {
     expect(buildIntradayPrompt({ ...base, language: "en" })).toContain("ENGLISCH");
     expect(buildIntradayPrompt(base)).toContain("DEUTSCH");
   });
+  it("includes the chance dossier and track-record in the decision prompt", () => {
+    const p = buildIntradayPrompt({
+      ...base, dossierBlock: "AMD: Long auf Pullback",
+      trackRecordBlock: "## Bisheriger Track-Record (Lehren)\nMSFT long …",
+    });
+    expect(p).toContain("Research zur Chance");
+    expect(p).toContain("AMD: Long auf Pullback");
+    expect(p).toContain("Bisheriger Track-Record (Lehren)");
+  });
 });
 
 describe("prompt language label", () => {
   it("decision prompt defaults to a German free-text directive", () => {
     const p = buildDecisionPrompt({
       day: "2026-06-11", dossierBlock: "", debateBlock: "", quotesBlock: "",
-      portfolioBlock: "", journalTail: "",
+      portfolioBlock: "", trackRecordBlock: "", journalTail: "",
     });
     expect(p).toContain("DEUTSCH");
   });
@@ -87,7 +119,7 @@ describe("prompt language label", () => {
   it("decision prompt switches the free-text directive to English", () => {
     const p = buildDecisionPrompt({
       day: "2026-06-11", dossierBlock: "", debateBlock: "", quotesBlock: "",
-      portfolioBlock: "", journalTail: "", language: "en",
+      portfolioBlock: "", trackRecordBlock: "", journalTail: "", language: "en",
     });
     expect(p).toContain("ENGLISCH");
     expect(p).not.toContain("auf DEUTSCH");
@@ -121,7 +153,7 @@ describe("session-neutral wording", () => {
   it("decision prompt says 'Handelsstart' not 'US-Open'", () => {
     const p = buildDecisionPrompt({
       day: "2026-06-11", dossierBlock: "", debateBlock: "", quotesBlock: "",
-      portfolioBlock: "", journalTail: "",
+      portfolioBlock: "", trackRecordBlock: "", journalTail: "",
     });
     expect(p).toContain("kurz vor Handelsstart");
     expect(p).not.toContain("US-Open");

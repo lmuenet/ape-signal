@@ -112,6 +112,7 @@ function closeTrade(
       openedAt: pos.openedAt,
       closedAt: now,
       source: pos.source,
+      thesis: pos.thesis,
     },
     exitFee,
   };

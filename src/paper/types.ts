@@ -99,6 +99,8 @@ export interface ClosedTrade {
   closedAt: string;
   /** Where the trade originated. Absent → "kuer". Carried for the intraday budget tier. */
   source?: TradeSource;
+  /** The position's thesis at entry — carried into the reflection track-record. */
+  thesis: string;
 }
 
 export interface Portfolio {

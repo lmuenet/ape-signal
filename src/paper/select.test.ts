@@ -63,6 +63,28 @@ describe("runKuer", () => {
     expect(sent[0]).toContain("NVDA");
   });
 
+  it("mirrors the dossier+debate to Telegram after the Kür post", async () => {
+    const { deps, sent } = makeDeps(freshPortfolio(1000), quotes);
+    await runKuer({ scanSummary: "NVDA: signal" }, deps);
+    const kuerIdx = sent.findIndex((m) => m.includes("Kandidatenkür"));
+    const mirrorIdx = sent.findIndex((m) => m.includes("Research & Debatte"));
+    expect(mirrorIdx).toBeGreaterThan(kuerIdx); // mirror comes AFTER the Kür post
+    expect(sent[mirrorIdx]).toContain("NVDA: Long Momentum");
+  });
+
+  it("does not break the Kür if the mirror send fails", async () => {
+    const sent: string[] = [];
+    const { deps, saved } = makeDeps(freshPortfolio(1000), quotes, {
+      send: vi.fn(async (t: string) => {
+        if (t.includes("Research & Debatte")) throw new Error("telegram down");
+        sent.push(t);
+      }),
+    });
+    await runKuer({ scanSummary: "NVDA: signal" }, deps);
+    expect(saved.at(-1)?.orders).toHaveLength(1); // Kür completed despite the mirror send throwing
+    expect(sent.at(-1)).toContain("Kandidatenkür");
+  });
+
   it("passes the configured language into the research prompt", async () => {
     let seen = "";
     const { deps } = makeDeps(freshPortfolio(1000), quotes, {

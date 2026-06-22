@@ -109,6 +109,7 @@ export interface DecisionPromptInput {
   debateBlock: string; // rendered bull/bear debate ("(keine Debatte ...)" if missing)
   quotesBlock: string;
   portfolioBlock: string;
+  trackRecordBlock: string; // rendered renderTrackRecord(history, N)
   journalTail: string;
   language?: Language;
 }
@@ -135,6 +136,8 @@ export function buildDecisionPrompt(input: DecisionPromptInput): string {
     "Wäge für jeden Kandidaten beide Seiten ab, bevor du entscheidest — ein starker",
     "Bear-Case ist ein Grund für einen engeren Stop, kleineren Einsatz oder Verzicht.",
     input.debateBlock,
+    "",
+    input.trackRecordBlock,
     "",
     "## Dein Journal (letzte Einträge)",
     input.journalTail.trim() === "" ? "(noch leer)" : input.journalTail,
@@ -240,6 +243,52 @@ export function buildTickPrompt(input: TickPromptInput): string {
   ].join("\n");
 }
 
+export interface IntradayDossierPromptInput {
+  stamp: string; // Berlin "YYYY-MM-DD HH:mm"
+  ticker: string;
+  triggerLabel: string;
+  price: number;
+  quotesBlock: string;
+  journalTail: string;
+  language?: Language;
+}
+
+/** Mini-Kür Stufe 1 (Sonnet, WebSearch): focused research on ONE triggered ticker. */
+export function buildIntradayDossierPrompt(input: IntradayDossierPromptInput): string {
+  return [
+    PERSONA,
+    "",
+    `Tick ${input.stamp}. Du bist in der RESEARCH-Rolle für eine INTRADAY-CHANCE: ein`,
+    `deterministischer Setup-Trigger ist auf ${input.ticker} gefeuert. Sammle kurz die`,
+    "Entscheidungsgrundlage (die Entscheidung trifft gleich dein Entscheider-Lauf).",
+    "Empfiehl nichts — informiere.",
+    "",
+    "## Trigger",
+    `${input.ticker} @ ${input.price} — ${input.triggerLabel}`,
+    "",
+    "## Aktuelle Kurse (inkl. EMA10/20/50, RSI, Trend)",
+    input.quotesBlock,
+    "",
+    "## Dein Journal (letzte Einträge)",
+    input.journalTail.trim() === "" ? "(noch leer)" : input.journalTail,
+    "",
+    "## Auftrag",
+    `Recherchiere per WebSearch kurz, was JETZT zu ${input.ticker} relevant ist: Katalysator`,
+    "(News/Earnings), ungewöhnliche Bewegung, Sentiment. Falls /last30days verfügbar ist,",
+    "nutze ihn; sonst ohne ihn weiter. GENAU EIN Kandidat (der getriggerte Ticker).",
+    "",
+    "Antworte mit GENAU diesem JSON-Format:",
+    "{",
+    '  "candidates": [',
+    `    { "ticker": "${input.ticker}", "angle": "Long-/Short-Idee in 1 Satz", "catalyst": "konkreter Katalysator + Datum", "sentiment": "Stimmungslage in 1 Satz" }`,
+    "  ],",
+    '  "marketContext": "Gesamtmarkt in 1-2 Sätzen"',
+    "}",
+    "",
+    jsonOnly(input.language ?? "de"),
+  ].join("\n");
+}
+
 export interface IntradayPromptInput {
   stamp: string; // Berlin "YYYY-MM-DD HH:mm"
   ticker: string;
@@ -247,6 +296,8 @@ export interface IntradayPromptInput {
   price: number;
   portfolioBlock: string;
   quotesBlock: string;
+  dossierBlock: string; // mini-dossier (or degrade note) from buildIntradayDossierPrompt
+  trackRecordBlock: string; // renderTrackRecord(history, N)
   journalTail: string;
   language?: Language;
 }
@@ -272,6 +323,11 @@ export function buildIntradayPrompt(input: IntradayPromptInput): string {
     "",
     "## Aktuelle Kurse (inkl. EMA10/20/50, RSI, Trend)",
     input.quotesBlock,
+    "",
+    "## Research zur Chance",
+    input.dossierBlock,
+    "",
+    input.trackRecordBlock,
     "",
     "## Dein Journal (letzte Einträge)",
     input.journalTail.trim() === "" ? "(noch leer)" : input.journalTail,

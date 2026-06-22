@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { describeAdjustment, formatDailySummary, formatManagerNote, renderPortfolio } from "./format";
-import type { Adjustment, EntryOrder, Portfolio, Position, QuoteMap, TickEvent } from "./types";
+import { describeAdjustment, formatDailySummary, formatDecisionMirror, formatManagerNote, renderPortfolio, renderTrackRecord } from "./format";
+import type { Adjustment, ClosedTrade, EntryOrder, Portfolio, Position, QuoteMap, TickEvent } from "./types";
+import type { Debate, Dossier } from "./decision";
 
 const pos: Position = {
   id: "P1", ticker: "AAPL", side: "long", stake: 200, leverage: 2,
@@ -10,6 +11,59 @@ const pos: Position = {
 };
 const quotes: QuoteMap = { AAPL: { close: 105, changePct: 1, high: 106, low: 99 } };
 const p: Portfolio = { balance: 800, positions: [pos], orders: [], history: [] };
+
+const ct = (over: Partial<ClosedTrade> = {}): ClosedTrade => ({
+  id: "1", ticker: "AMD", side: "long", stake: 100, leverage: 2,
+  entryPrice: 100, exitPrice: 106, pnl: 12, reason: "take-profit",
+  openedAt: "2026-06-06T13:00:00Z", closedAt: "2026-06-09T13:00:00Z",
+  thesis: "EMA-Cross Pullback", ...over,
+});
+
+describe("renderTrackRecord", () => {
+  it("is empty-friendly", () => {
+    expect(renderTrackRecord([], 8)).toContain("noch keine abgeschlossenen Trades");
+  });
+  it("renders one line per trade with reason, pnl% and hold duration", () => {
+    const out = renderTrackRecord([ct()], 8);
+    expect(out).toContain("AMD long");
+    expect(out).toContain("EMA-Cross Pullback");
+    expect(out).toContain("Take-Profit");
+    expect(out).toContain("+12.00%");
+    expect(out).toContain("3 Tage");
+  });
+  it("marks sub-day holds and respects the limit", () => {
+    const intraday = ct({ openedAt: "2026-06-09T13:00:00Z", closedAt: "2026-06-09T17:00:00Z", reason: "stop", pnl: -20 });
+    expect(renderTrackRecord([intraday], 8)).toContain("<1 Tag");
+    const many = Array.from({ length: 10 }, (_, i) => ct({ id: String(i), ticker: `T${i}` }));
+    const out = renderTrackRecord(many, 3);
+    expect(out.split("\n").filter((l) => l.includes("long")).length).toBe(3);
+  });
+});
+
+describe("formatDecisionMirror", () => {
+  const dossier: Dossier = {
+    candidates: [{ ticker: "AMD", angle: "Long auf Pullback", catalyst: "Earnings", sentiment: "bullisch" }],
+    marketContext: "SPY ruhig, VIX niedrig",
+  };
+  const debate: Debate = { debates: [{ ticker: "AMD", bull: "Trend intakt", bear: "RSI hoch" }] };
+
+  it("merges dossier + debate into one line per candidate plus market line", () => {
+    const out = formatDecisionMirror(dossier, debate);
+    expect(out).toContain("Research & Debatte");
+    expect(out).toContain("AMD: Long auf Pullback");
+    expect(out).toContain("Bull Trend intakt / Bear RSI hoch");
+    expect(out).toContain("Marktlage: SPY ruhig, VIX niedrig");
+  });
+  it("renders angle only when a candidate has no debate", () => {
+    const out = formatDecisionMirror(dossier, { debates: [] });
+    expect(out).toContain("AMD: Long auf Pullback");
+    expect(out).not.toContain("Bull");
+  });
+  it("returns empty string when there is nothing to mirror", () => {
+    expect(formatDecisionMirror(null, null)).toBe("");
+    expect(formatDecisionMirror({ candidates: [], marketContext: "" }, null)).toBe("");
+  });
+});
 
 describe("renderPortfolio", () => {
   it("shows the wake band on the position line", () => {

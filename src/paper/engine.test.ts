@@ -150,6 +150,13 @@ describe("applyTick — exits", () => {
     expect(portfolio.positions).toHaveLength(0);
   });
 
+  it("carries the position thesis into the closed trade", () => {
+    const prev = { NVDA: q(101, 102, 96) };
+    const p = withLastTick({ ...freshPortfolio(800), positions: [position({ thesis: "EMA-Cross Pullback" })] }, prev);
+    const { portfolio } = applyTick(p, { NVDA: q(96, 102, 94.5) }, { now: NOW, day: DAY, isClose: false });
+    expect(portfolio.history.at(-1)?.thesis).toBe("EMA-Cross Pullback");
+  });
+
   it("prefers the stop when stop AND take-profit are touched in one window", () => {
     const prev = { NVDA: q(100, 100.5, 99) };
     const p = withLastTick({ ...freshPortfolio(800), positions: [position()] }, prev);

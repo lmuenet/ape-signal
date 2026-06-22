@@ -2,10 +2,19 @@
 // Telegram messages and the journal. Pure string builders.
 import { equity, liquidationPrice, positionPnl } from "./engine";
 import { formatTech } from "./trend";
-import type { Adjustment, EntryOrder, Portfolio, Position, QuoteMap, TickEvent } from "./types";
+import type { Adjustment, ClosedTrade, EntryOrder, Portfolio, Position, QuoteMap, TickEvent } from "./types";
+import type { Debate, Dossier } from "./decision";
 
 const usd = (n: number) => `${n >= 0 ? "" : "-"}$${Math.abs(n).toFixed(2)}`;
 const sign = (n: number) => `${n >= 0 ? "+" : ""}${n.toFixed(2)}`;
+
+/** Human label per close reason (shared by event lines and the track-record). */
+export const closeReasonLabel: Record<ClosedTrade["reason"], string> = {
+  stop: "Stop-Loss",
+  "take-profit": "Take-Profit",
+  liquidation: "LIQUIDIERT",
+  manual: "Geschlossen",
+};
 
 function positionLine(pos: Position, quotes: QuoteMap): string {
   const q = quotes[pos.ticker];
@@ -68,13 +77,7 @@ export function formatEvent(e: TickEvent): string {
   }
   const t = e.trade;
   const emoji = t.pnl >= 0 ? "✅" : t.reason === "liquidation" ? "💀" : "🔴";
-  const reasonText: Record<typeof t.reason, string> = {
-    stop: "Stop-Loss",
-    "take-profit": "Take-Profit",
-    liquidation: "LIQUIDIERT",
-    manual: "Geschlossen",
-  };
-  return `${emoji} ${reasonText[t.reason]}: ${t.ticker} ${t.side} @ ${t.exitPrice} — P&L ${usd(t.pnl)} (${sign((t.pnl / t.stake) * 100)}%)`;
+  return `${emoji} ${closeReasonLabel[t.reason]}: ${t.ticker} ${t.side} @ ${t.exitPrice} — P&L ${usd(t.pnl)} (${sign((t.pnl / t.stake) * 100)}%)`;
 }
 
 /** The Kandidatenkür Telegram post. */
@@ -167,5 +170,38 @@ export function formatDailySummary(
     renderPortfolio(p, quotes).split("\n").slice(2).join("\n"),
   ];
   if (opts.healthLine !== undefined) lines.push("", opts.healthLine);
+  return lines.join("\n");
+}
+
+/** Condensed Telegram mirror of the Kür's research dossier + bull/bear debate. */
+export function formatDecisionMirror(dossier: Dossier | null, debate: Debate | null): string {
+  if (!dossier && !debate) return "";
+  const candidates = dossier?.candidates ?? [];
+  const lines: string[] = [];
+  for (const c of candidates) {
+    const d = debate?.debates.find((x) => x.ticker === c.ticker);
+    lines.push(d ? `${c.ticker}: ${c.angle} · Bull ${d.bull} / Bear ${d.bear}` : `${c.ticker}: ${c.angle}`);
+  }
+  if (lines.length === 0) return "";
+  const header = [`🦍 Mr Ape — Research & Debatte (${new Date().toISOString().slice(0, 10)})`, ""];
+  if (dossier && dossier.marketContext.trim() !== "") lines.push("", `Marktlage: ${dossier.marketContext.trim()}`);
+  return [...header, ...lines].join("\n");
+}
+
+/** Reflection block: the last `limit` closed trades as one line each (for the decider prompt). */
+export function renderTrackRecord(history: ClosedTrade[], limit: number): string {
+  const recent = history.slice(-limit).reverse();
+  const lines = ["## Bisheriger Track-Record (Lehren)"];
+  if (recent.length === 0) {
+    lines.push("(noch keine abgeschlossenen Trades)");
+    return lines.join("\n");
+  }
+  for (const t of recent) {
+    const days = (Date.parse(t.closedAt) - Date.parse(t.openedAt)) / 86_400_000;
+    const hold = days < 1 ? "<1 Tag" : `${Math.round(days)} Tag${Math.round(days) === 1 ? "" : "e"}`;
+    const pnlPct = sign((t.pnl / t.stake) * 100);
+    const thesis = t.thesis?.trim() ? `These „${t.thesis.trim()}"` : "ohne These";
+    lines.push(`${t.ticker} ${t.side}, ${thesis} → ${closeReasonLabel[t.reason]}, P&L ${pnlPct}% (${hold})`);
+  }
   return lines.join("\n");
 }
