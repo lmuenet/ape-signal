@@ -296,6 +296,8 @@ export interface IntradayPromptInput {
   price: number;
   portfolioBlock: string;
   quotesBlock: string;
+  dossierBlock: string; // mini-dossier (or degrade note) from buildIntradayDossierPrompt
+  trackRecordBlock: string; // renderTrackRecord(history, N)
   journalTail: string;
   language?: Language;
 }
@@ -321,6 +323,11 @@ export function buildIntradayPrompt(input: IntradayPromptInput): string {
     "",
     "## Aktuelle Kurse (inkl. EMA10/20/50, RSI, Trend)",
     input.quotesBlock,
+    "",
+    "## Research zur Chance",
+    input.dossierBlock,
+    "",
+    input.trackRecordBlock,
     "",
     "## Dein Journal (letzte Einträge)",
     input.journalTail.trim() === "" ? "(noch leer)" : input.journalTail,

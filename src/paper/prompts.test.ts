@@ -82,7 +82,8 @@ describe("buildIntradayDossierPrompt (Mini-Kür Research)", () => {
 describe("buildIntradayPrompt (Stufe 3)", () => {
   const base = {
     stamp: "2026-06-09 17:00", ticker: "AMD", triggerLabel: "EMA10×EMA20 ↑ — Pullback",
-    price: 100, portfolioBlock: "(depot)", quotesBlock: "(quotes)", journalTail: "",
+    price: 100, portfolioBlock: "(depot)", quotesBlock: "(quotes)",
+    dossierBlock: "(dossier)", trackRecordBlock: "(track-record)", journalTail: "",
   };
   it("states the trigger, the limit-only rule and the one-trade cap", () => {
     const p = buildIntradayPrompt(base);
@@ -94,6 +95,15 @@ describe("buildIntradayPrompt (Stufe 3)", () => {
   it("honours the language flag", () => {
     expect(buildIntradayPrompt({ ...base, language: "en" })).toContain("ENGLISCH");
     expect(buildIntradayPrompt(base)).toContain("DEUTSCH");
+  });
+  it("includes the chance dossier and track-record in the decision prompt", () => {
+    const p = buildIntradayPrompt({
+      ...base, dossierBlock: "AMD: Long auf Pullback",
+      trackRecordBlock: "## Bisheriger Track-Record (Lehren)\nMSFT long …",
+    });
+    expect(p).toContain("Research zur Chance");
+    expect(p).toContain("AMD: Long auf Pullback");
+    expect(p).toContain("Bisheriger Track-Record (Lehren)");
   });
 });
 
