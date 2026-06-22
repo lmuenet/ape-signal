@@ -109,6 +109,7 @@ export interface DecisionPromptInput {
   debateBlock: string; // rendered bull/bear debate ("(keine Debatte ...)" if missing)
   quotesBlock: string;
   portfolioBlock: string;
+  trackRecordBlock: string; // rendered renderTrackRecord(history, N)
   journalTail: string;
   language?: Language;
 }
@@ -135,6 +136,8 @@ export function buildDecisionPrompt(input: DecisionPromptInput): string {
     "Wäge für jeden Kandidaten beide Seiten ab, bevor du entscheidest — ein starker",
     "Bear-Case ist ein Grund für einen engeren Stop, kleineren Einsatz oder Verzicht.",
     input.debateBlock,
+    "",
+    input.trackRecordBlock,
     "",
     "## Dein Journal (letzte Einträge)",
     input.journalTail.trim() === "" ? "(noch leer)" : input.journalTail,

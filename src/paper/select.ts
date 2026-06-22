@@ -5,7 +5,7 @@
 // or debate degrades gracefully; an unreadable decision skips the day (never
 // guessed trades).
 import { placeOrders, tradesPlacedToday } from "./engine";
-import { formatKuer, orderLine, renderPortfolio, renderQuotes } from "./format";
+import { formatKuer, orderLine, renderPortfolio, renderQuotes, renderTrackRecord } from "./format";
 import { buildDebatePrompt, buildDecisionPrompt, buildDossierPrompt } from "./prompts";
 import { parseDebate, parseDecision, parseDossier, type Debate, type Dossier } from "./decision";
 import { GUARDRAILS, type Portfolio, type QuoteMap, type WatchlistEntry, type WatchlistState } from "./types";
@@ -174,6 +174,7 @@ export async function runKuer(opts: KuerOptions, deps: KuerDeps): Promise<void> 
         debateBlock: renderDebate(debate),
         quotesBlock: renderQuotes(quotes),
         portfolioBlock: renderPortfolio(portfolio, quotes),
+        trackRecordBlock: renderTrackRecord(portfolio.history, 8),
         journalTail,
         language: deps.language ?? "de",
       }),
