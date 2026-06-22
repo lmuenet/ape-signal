@@ -69,7 +69,8 @@ async function main(): Promise<void> {
       ? (trigger: SetupTrigger) =>
           runIntradayOpportunity(trigger, {
             ...shared,
-            runner: createClaudeRunner({ model: "sonnet", label: "Intraday", onSlow, ...watchdog }),
+            researchRunner: createClaudeRunner({ model: "sonnet", allowedTools: ["WebSearch", "Skill"], label: "Intraday-Research", onSlow, ...watchdog }),
+            decideRunner: createClaudeRunner({ model: "opus", label: "Intraday-Entscheidung", onSlow, ...watchdog }),
           })
       : undefined;
     // Best-effort: the monitor tick is already done + persisted, so a radar/Telegram
