@@ -5,7 +5,7 @@
 // or debate degrades gracefully; an unreadable decision skips the day (never
 // guessed trades).
 import { placeOrders, tradesPlacedToday } from "./engine";
-import { formatKuer, orderLine, renderPortfolio, renderQuotes, renderTrackRecord } from "./format";
+import { formatDecisionMirror, formatKuer, orderLine, renderPortfolio, renderQuotes, renderTrackRecord } from "./format";
 import { buildDebatePrompt, buildDecisionPrompt, buildDossierPrompt } from "./prompts";
 import { parseDebate, parseDecision, parseDossier, type Debate, type Dossier } from "./decision";
 import { GUARDRAILS, type Portfolio, type QuoteMap, type WatchlistEntry, type WatchlistState } from "./types";
@@ -261,4 +261,14 @@ export async function runKuer(opts: KuerOptions, deps: KuerDeps): Promise<void> 
   deps.appendJournal("Kandidatenkür", journalBody);
 
   await deps.send(formatKuer(accepted, rejected.map((r) => `${r.decision.ticker}: ${r.reason}`), decision.journal));
+
+  // Verdichtete Spiegelung der Herleitung — best-effort, darf die Kür nie brechen.
+  const mirror = formatDecisionMirror(dossier, debate);
+  if (mirror !== "") {
+    try {
+      await deps.send(mirror);
+    } catch (err) {
+      console.error(`[kuer] mirror send failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
 }
