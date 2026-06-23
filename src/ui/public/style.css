@@ -12,6 +12,13 @@ main { max-width: 1100px; margin: 0 auto; padding: 16px 24px 64px; }
 .pnl-pos { color: var(--green); } .pnl-neg { color: var(--red); }
 .chart { height: 220px; }
 .empty { color: var(--dim); font-style: italic; }
+
+/* Live-Chart (TradingView-Embed): lazy aufklappbar pro Position */
+.live-toggle { margin-top: 10px; background: var(--card); color: var(--dim); border: 1px solid var(--line); border-radius: 6px; padding: 6px 12px; font: inherit; font-size: 13px; cursor: pointer; }
+.live-toggle:hover { color: var(--fg); border-color: var(--dim); }
+.live { height: 360px; margin-top: 10px; }
+.live[hidden] { display: none; }
+.live .tradingview-widget-container, .live .tradingview-widget-container__widget { height: 100%; width: 100%; }
 #journal article { border-top: 1px solid var(--line); padding: 10px 0; }
 #journal h3 { font-size: 14px; margin: 0 0 6px; color: var(--dim); }
 #journal pre { white-space: pre-wrap; font: inherit; margin: 0; }

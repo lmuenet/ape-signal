@@ -113,6 +113,15 @@ describe("ui server", () => {
     expect(await res.text()).toContain("buildLegend");
   });
 
+  it("serves the live-chart module as javascript", async () => {
+    fixture();
+    const base = await start();
+    const res = await fetch(`${base}/liveChart.js`, { headers: AUTH });
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toContain("javascript");
+    expect(await res.text()).toContain("tvWidgetConfig");
+  });
+
   it("404s unknown paths and blocks path traversal", async () => {
     fixture();
     const base = await start();
