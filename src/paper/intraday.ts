@@ -6,7 +6,7 @@
 // unreadable / declined / limited answer means NO trade (never a guess). The process is
 // mirrored to Telegram (start-ping + a GUARANTEED outcome) so it is visible live.
 import { intradayTradesPlacedToday, placeOrders, tradesPlacedToday } from "./engine";
-import { renderPortfolio, renderQuotes, renderTrackRecord } from "./format";
+import { label, money, renderPortfolio, renderQuotes, renderTrackRecord } from "./format";
 import { buildIntradayDossierPrompt, buildIntradayPrompt } from "./prompts";
 import { parseDecision, parseDossier, type Dossier } from "./decision";
 import { enrichWithListing, type EurPricing } from "./eurPricing";
@@ -159,7 +159,7 @@ export async function runIntradayOpportunity(trigger: SetupTrigger, deps: Intrad
 
   const o = accepted[0];
   const journalText = decision.journal.trim();
-  const orderText = `🟢 Intraday-Limit gesetzt: ${o.ticker} ${o.side} ${o.leverage}x, Einsatz $${o.stake.toFixed(2)}, Limit ${o.limitPrice}, SL ${o.stopLoss}${o.takeProfit !== undefined ? `, TP ${o.takeProfit}` : ""}${o.expiresOn ? ` (bis ${o.expiresOn})` : ""}`;
+  const orderText = `🟢 Intraday-Limit gesetzt: ${label(o)} ${o.side} ${o.leverage}x, Einsatz ${money(o.stake, o.currency)}, Limit ${o.limitPrice}, SL ${o.stopLoss}${o.takeProfit !== undefined ? `, TP ${o.takeProfit}` : ""}${o.expiresOn ? ` (bis ${o.expiresOn})` : ""}`;
   deps.appendJournal(`Intraday ${stamp.slice(11)} — ${ticker}`, [journalText, orderText].filter((l) => l !== "").join("\n"));
   await deps.send([`🦍 Mr Ape — Intraday-Chance ${ticker} (${trigger.note})`, journalText, orderText].filter((l) => l !== "").join("\n"));
 }

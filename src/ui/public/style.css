@@ -9,6 +9,8 @@ main { max-width: 1100px; margin: 0 auto; padding: 16px 24px 64px; }
 .stats b { color: var(--fg); }
 .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; margin: 12px 0; }
 .card .meta { color: var(--dim); font-size: 13px; margin-top: 2px; }
+/* Ticker neben dem Klarnamen (ADR 0005): dezent, kleiner. */
+.tk { color: var(--dim); font-weight: 400; font-size: 13px; }
 .pnl-pos { color: var(--green); } .pnl-neg { color: var(--red); }
 .chart { height: 220px; }
 .empty { color: var(--dim); font-style: italic; }

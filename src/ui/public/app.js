@@ -4,8 +4,11 @@ import { buildLegend } from "./legend.js";
 import { TV_EMBED_SRC, tvWidgetConfig } from "./liveChart.js";
 
 const $ = (sel) => document.querySelector(sel);
-const usd = (n) => `${n < 0 ? "-" : ""}$${Math.abs(n).toFixed(2)}`;
-const signedUsd = (n) => `${n >= 0 ? "+" : "-"}$${Math.abs(n).toFixed(2)}`;
+// Money with the instrument/depot currency symbol — default EUR (the depot is
+// EUR after the German-pricing migration, ADR 0005); legacy USD via the field.
+const CCY_SYMBOL = { EUR: "€", USD: "$" };
+const money = (n, ccy = "EUR") => `${n < 0 ? "-" : ""}${CCY_SYMBOL[ccy] ?? "€"}${Math.abs(n).toFixed(2)}`;
+const signedMoney = (n, ccy = "EUR") => `${n >= 0 ? "+" : "-"}${CCY_SYMBOL[ccy] ?? "€"}${Math.abs(n).toFixed(2)}`;
 const signedPct = (n) => `${n >= 0 ? "+" : ""}${n.toFixed(1)}%`;
 const tone = (n) => (n >= 0 ? "pnl-pos" : "pnl-neg");
 const ts = (iso) => Math.floor(Date.parse(iso) / 1000);
@@ -48,8 +51,8 @@ function positionCard(pos, quotes) {
   const el = document.createElement("div");
   el.className = "card";
   el.innerHTML = `
-    <b>${pos.ticker}</b> ${pos.side} ${pos.leverage}x — Einsatz ${usd(pos.stake)}
-    ${pnl === null ? "" : `<span class="${pnl >= 0 ? "pnl-pos" : "pnl-neg"}">P&amp;L ${usd(pnl)}</span>`}
+    <b>${nameLabel(pos)}</b> ${pos.side} ${pos.leverage}x — Einsatz ${money(pos.stake, pos.currency)}
+    ${pnl === null ? "" : `<span class="${pnl >= 0 ? "pnl-pos" : "pnl-neg"}">P&amp;L ${money(pnl, pos.currency)}</span>`}
     <div class="meta">${pos.thesis ?? ""}</div>
     ${legendBar(pos, quotes)}
     <div class="chart"></div>
@@ -122,10 +125,10 @@ function renderPerformance(rows) {
     .map(
       (r) => `<tr>
         <td>${r.day}</td>
-        <td>${usd(r.equity)}</td>
-        <td class="${tone(r.realizedPnl)}">${signedUsd(r.realizedPnl)}</td>
+        <td>${money(r.equity)}</td>
+        <td class="${tone(r.realizedPnl)}">${signedMoney(r.realizedPnl)}</td>
         <td>${r.trades}</td>
-        <td class="${tone(r.cumulativePnl)}">${signedUsd(r.cumulativePnl)}</td>
+        <td class="${tone(r.cumulativePnl)}">${signedMoney(r.cumulativePnl)}</td>
         <td class="${tone(r.returnPct)}">${signedPct(r.returnPct)}</td>
       </tr>`,
     )
@@ -149,6 +152,10 @@ function renderJournal(md) {
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 
+// "Klarname (TICKER)" when a clear company name is known (ADR 0005), else the ticker.
+const nameLabel = (x) =>
+  x.name ? `${esc(x.name)} <span class="tk">(${esc(x.ticker)})</span>` : esc(x.ticker);
+
 function renderKuerArtifact(a) {
   const debates = a.debate?.debates ?? [];
   const cards = (a.dossier?.candidates ?? []).map((c) => {
@@ -160,7 +167,7 @@ function renderKuerArtifact(a) {
     </div>`;
   });
   const orders = a.orders.map(
-    (o) => `<div class="card"><b>${esc(o.ticker)}</b> ${o.side} ${o.leverage}x — Einsatz ${usd(o.stake)},
+    (o) => `<div class="card"><b>${nameLabel(o)}</b> ${o.side} ${o.leverage}x — Einsatz ${money(o.stake, o.currency)},
       ${o.entryType === "market" ? "Market" : `Limit ${o.limitPrice}`}, SL ${o.stopLoss}${o.takeProfit ? `, TP ${o.takeProfit}` : ""}
       <div class="meta">${esc(o.thesis)}</div></div>`,
   );
@@ -199,7 +206,7 @@ async function load() {
   const quotes = portfolio.lastTick?.quotes ?? {};
 
   $("#headline").innerHTML =
-    `Equity <b>${usd(state.equity)}</b> · frei <b>${usd(portfolio.balance)}</b>` +
+    `Equity <b>${money(state.equity)}</b> · frei <b>${money(portfolio.balance)}</b>` +
     ` · ${portfolio.positions.length} Positionen, ${portfolio.orders.length} Orders` +
     (state.generatedAt ? ` · Stand ${new Date(state.generatedAt).toLocaleString("de-DE")}` : "");
 
@@ -219,8 +226,8 @@ async function load() {
   for (const o of portfolio.orders) {
     const el = document.createElement("div");
     el.className = "card";
-    el.innerHTML = `<b>${o.ticker}</b> ${o.side} ${o.leverage}x — ${o.entryType === "market" ? "Market" : `Limit ${o.limitPrice}`},
-      SL ${o.stopLoss}${o.takeProfit ? `, TP ${o.takeProfit}` : ""} <div class="meta">${o.thesis ?? ""}</div>`;
+    el.innerHTML = `<b>${nameLabel(o)}</b> ${o.side} ${o.leverage}x — ${o.entryType === "market" ? "Market" : `Limit ${o.limitPrice}`},
+      SL ${o.stopLoss}${o.takeProfit ? `, TP ${o.takeProfit}` : ""} <div class="meta">${esc(o.thesis)}</div>`;
     orderRoot.appendChild(el);
   }
 

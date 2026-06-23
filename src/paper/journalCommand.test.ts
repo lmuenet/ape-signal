@@ -20,7 +20,7 @@ describe("runJournalCommand", () => {
   it("renders the depot status with journal tail when called without text", async () => {
     const { deps } = makeDeps(freshPortfolio(1000));
     const reply = await runJournalCommand(undefined, deps);
-    expect(reply).toContain("Guthaben (frei): $1000.00");
+    expect(reply).toContain("Guthaben (frei): €1000.00"); // EUR-Depot (ADR 0005)
     expect(reply).toContain("Kandidatenkür");
     expect(deps.claudeRunner).not.toHaveBeenCalled();
     expect(deps.fetchQuotes).not.toHaveBeenCalled(); // no positions
@@ -32,7 +32,7 @@ describe("runJournalCommand", () => {
     const reply = await runJournalCommand("dein guthaben ist jetzt 500", deps);
     expect(saved.at(-1)?.balance).toBe(500);
     expect(journal[0][0]).toBe("Verwaltung");
-    expect(reply).toContain("$500.00");
+    expect(reply).toContain("€500.00"); // gerenderter Kontostand in EUR (ADR 0005)
   });
 
   it("leaves the balance untouched on an uninterpretable instruction", async () => {

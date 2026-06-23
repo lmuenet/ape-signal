@@ -358,7 +358,7 @@ export function buildAdminPrompt(text: string, balance: number, language: Langua
     "Du verwaltest das Guthaben eines fiktiven Paper-Trading-Depots. Der Besitzer hat per",
     `Telegram geschrieben: "${text}"`,
     "",
-    `Aktuelles freies Guthaben: $${balance.toFixed(2)}.`,
+    `Aktuelles freies Guthaben: €${balance.toFixed(2)}.`,
     "",
     "Interpretiere die Nachricht als GENAU EINE dieser Aktionen:",
     '- "set_balance": Guthaben soll auf einen Betrag GESETZT werden ("dein Guthaben ist jetzt 500")',
