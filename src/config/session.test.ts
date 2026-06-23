@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { loadSession, isValidHHMM, isValidInterval } from "./session";
+import { loadSession, activeMarkets, marketForScanLabel, isValidHHMM, isValidInterval } from "./session";
 
 describe("loadSession presets", () => {
   it("defaults to the US session", () => {
@@ -63,5 +63,45 @@ describe("validators", () => {
     expect(isValidInterval(0)).toBe(false);
     expect(isValidInterval(2.5)).toBe(false);
     expect(isValidInterval(61)).toBe(false);
+  });
+});
+
+describe("activeMarkets", () => {
+  it("us → single US market with the PreUS label", () => {
+    const m = activeMarkets({ SESSION: "us" });
+    expect(m.map((x) => x.name)).toEqual(["us"]);
+    expect(m[0].scanLabel).toBe("PreUS");
+  });
+  it("xetra → single Xetra market with the PreXetra label", () => {
+    const m = activeMarkets({ SESSION: "xetra" });
+    expect(m.map((x) => x.name)).toEqual(["xetra"]);
+    expect(m[0].scanLabel).toBe("PreXetra");
+  });
+  it("xetra+us → both markets, chronological (xetra first)", () => {
+    const m = activeMarkets({ SESSION: "xetra+us" });
+    expect(m.map((x) => x.name)).toEqual(["xetra", "us"]);
+    expect(m.map((x) => x.scanLabel)).toEqual(["PreXetra", "PreUS"]);
+    expect(m.map((x) => x.kuerScan)).toEqual(["08:45", "15:15"]);
+  });
+  it("ignores single-value overrides in combined mode", () => {
+    const m = activeMarkets({ SESSION: "xetra+us", SESSION_OPEN: "10:00" });
+    expect(m.find((x) => x.name === "xetra")!.open).toBe("09:00"); // preset kept
+  });
+});
+
+describe("loadSession combined window (xetra+us)", () => {
+  it("spans the union 09:00–22:00 with the earliest Kür", () => {
+    expect(loadSession({ SESSION: "xetra+us" })).toEqual({
+      open: "09:00", close: "22:00", kuerScan: "08:45", tickIntervalMin: 5,
+    });
+  });
+});
+
+describe("marketForScanLabel", () => {
+  it("maps labels back to markets (case-insensitive), else null", () => {
+    expect(marketForScanLabel("PreUS")).toBe("us");
+    expect(marketForScanLabel("prexetra")).toBe("xetra");
+    expect(marketForScanLabel("PreOpen")).toBeNull();
+    expect(marketForScanLabel("Manual")).toBeNull();
   });
 });

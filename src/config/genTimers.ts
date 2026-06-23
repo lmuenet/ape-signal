@@ -1,10 +1,11 @@
-// src/config/genTimers.ts — erzeugt die drei session-getriebenen systemd-Timer
-// aus der SessionConfig (A2). Reiner Kern (buildTimerFiles) + ein dünner main,
-// der nach --out=<dir> (Default /etc/systemd/system) schreibt. Der Tick-Timer
-// feuert fix jede Minute im Fenster; das effektive Intervall drosselt zur Laufzeit.
+// src/config/genTimers.ts — erzeugt die session-getriebenen systemd-Timer aus
+// den aktiven Märkten (A2). Reiner Kern (buildTimerFiles) + ein dünner main, der
+// nach --out=<dir> (Default /etc/systemd/system) schreibt. Pro aktivem Markt ein
+// Pre-Session-Kür-Timer; der Tick feuert jede Minute über das Vereinigungs-
+// fenster (effektives Intervall drosselt zur Laufzeit), Close am spätesten Close.
 import { writeFileSync, mkdirSync, existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { loadSession, type SessionConfig } from "./session";
+import { activeMarkets, type Market } from "./session";
 
 const pad = (n: number): string => String(n).padStart(2, "0");
 
@@ -29,48 +30,60 @@ function tickOnCalendar(open: string, close: string): string {
     .join("\n");
 }
 
-/** Filename → unit-file content for the three session-driven timers. */
-export function buildTimerFiles(session: SessionConfig): Record<string, string> {
-  return {
-    "ape-signal-scan-preus.timer": [
+/**
+ * One pre-session Kür timer PER active market (`PreXetra` / `PreUS`) plus a
+ * single combined tick + close timer over the union window. Returns
+ * filename → unit-file content.
+ */
+export function buildTimerFiles(markets: Market[]): Record<string, string> {
+  const open = markets.reduce((min, m) => (toMinutes(m.open) < toMinutes(min) ? m.open : min), markets[0].open);
+  const close = markets.reduce((max, m) => (toMinutes(m.close) > toMinutes(max) ? m.close : max), markets[0].close);
+
+  const files: Record<string, string> = {};
+  for (const m of markets) {
+    files[`ape-signal-scan-${m.scanLabel.toLowerCase()}.timer`] = [
       "[Unit]",
-      `Description=Ape Signal pre-session scan (${session.kuerScan} Europe/Berlin, Kandidatenkuer-Trigger)`,
+      `Description=Ape Signal pre-session scan ${m.name} (${m.kuerScan} Europe/Berlin, Kandidatenkuer-Trigger)`,
       "",
       "[Timer]",
-      `OnCalendar=Mon..Fri *-*-* ${session.kuerScan}:00 Europe/Berlin`,
+      `OnCalendar=Mon..Fri *-*-* ${m.kuerScan}:00 Europe/Berlin`,
       "Persistent=true",
-      "Unit=ape-signal-scan@PreUS.service",
+      `Unit=ape-signal-scan@${m.scanLabel}.service`,
       "",
       "[Install]",
       "WantedBy=timers.target",
       "",
-    ].join("\n"),
-    "ape-signal-tick.timer": [
-      "[Unit]",
-      `Description=Ape Signal paper-trading monitor tick (every minute ${session.open}-${session.close} Europe/Berlin; effektives Intervall drosselt zur Laufzeit)`,
-      "",
-      "[Timer]",
-      tickOnCalendar(session.open, session.close),
-      "Unit=ape-signal-tick@Tick.service",
-      "",
-      "[Install]",
-      "WantedBy=timers.target",
-      "",
-    ].join("\n"),
-    "ape-signal-tick-close.timer": [
-      "[Unit]",
-      `Description=Ape Signal paper-trading closing tick (${session.close} Europe/Berlin)`,
-      "",
-      "[Timer]",
-      `OnCalendar=Mon..Fri *-*-* ${session.close}:00 Europe/Berlin`,
-      "Persistent=true",
-      "Unit=ape-signal-tick@Close.service",
-      "",
-      "[Install]",
-      "WantedBy=timers.target",
-      "",
-    ].join("\n"),
-  };
+    ].join("\n");
+  }
+
+  files["ape-signal-tick.timer"] = [
+    "[Unit]",
+    `Description=Ape Signal paper-trading monitor tick (every minute ${open}-${close} Europe/Berlin; effektives Intervall drosselt zur Laufzeit)`,
+    "",
+    "[Timer]",
+    tickOnCalendar(open, close),
+    "Unit=ape-signal-tick@Tick.service",
+    "",
+    "[Install]",
+    "WantedBy=timers.target",
+    "",
+  ].join("\n");
+
+  files["ape-signal-tick-close.timer"] = [
+    "[Unit]",
+    `Description=Ape Signal paper-trading closing tick (${close} Europe/Berlin)`,
+    "",
+    "[Timer]",
+    `OnCalendar=Mon..Fri *-*-* ${close}:00 Europe/Berlin`,
+    "Persistent=true",
+    "Unit=ape-signal-tick@Close.service",
+    "",
+    "[Install]",
+    "WantedBy=timers.target",
+    "",
+  ].join("\n");
+
+  return files;
 }
 
 /** Read an env file (KEY=VALUE) into a record; missing file → empty. */
@@ -98,14 +111,15 @@ function main(): void {
 
   const fileEnv = loadEnvFile(envFileArg);
   const source: Record<string, string | undefined> = { ...fileEnv, ...process.env };
-  const session = loadSession(source);
-  const files = buildTimerFiles(session);
+  const markets = activeMarkets(source);
+  const files = buildTimerFiles(markets);
 
   mkdirSync(out, { recursive: true });
   for (const [name, content] of Object.entries(files)) {
     writeFileSync(join(out, name), content, "utf8");
   }
-  console.log(`[gen-timers] wrote ${Object.keys(files).length} timers to ${out} for session ${session.open}-${session.close} (Kuer ${session.kuerScan}). Run: systemctl daemon-reload`);
+  const summary = markets.map((m) => `${m.name}@${m.kuerScan}`).join(", ");
+  console.log(`[gen-timers] wrote ${Object.keys(files).length} timers to ${out} for markets ${summary}. Run: systemctl daemon-reload`);
 }
 
 if (process.argv[1] && process.argv[1].endsWith("genTimers.ts")) {

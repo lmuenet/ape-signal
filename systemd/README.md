@@ -58,16 +58,24 @@ Notes:
 - `CLAUDE_CODE_OAUTH_TOKEN` (subscription, from `claude setup-token`) lives in
   `/etc/ape-signal.env`. It is valid ~1 year — renew around day 350. Token expiry
   is silent; the scan's Telegram failure alert is the backstop.
-- `SESSION` (`us` | `xetra`, Default `us`) plus optionale Overrides
-  (`SESSION_OPEN`/`SESSION_CLOSE`/`SESSION_KUER_SCAN`, `TICK_INTERVAL_MIN`) in
-  `/etc/ape-signal.env` definieren das Handelsfenster. Die drei
-  session-getriebenen Timer (`ape-signal-scan-preus`, `ape-signal-tick`,
-  `ape-signal-tick-close`) werden daraus generiert: `npm run gen-timers`
-  (schreibt nach `/etc/systemd/system`, `--out=<dir>` für Tests) → danach
-  `systemctl daemon-reload`. Ohne Generator-Lauf gelten die committeten
-  US-Baseline-Timer. Der Tick-Timer feuert jede Minute im Fenster; das effektive
-  Intervall drosselt zur Laufzeit (live per Telegram `/ticker N`). Der
-  PreOpen-Scan (08:45) ist nicht session-getrieben und bleibt fix.
+- `SESSION` (`us` | `xetra` | `xetra+us`, Default `us`) wählt die aktiven Märkte.
+  Single-Market-Modi erlauben Overrides (`SESSION_OPEN`/`SESSION_CLOSE`/
+  `SESSION_KUER_SCAN`, `TICK_INTERVAL_MIN`); `xetra+us` nutzt die Preset-Zeiten
+  beider Märkte (Fenster 09:00–22:00, Kürs 08:45 + 15:15). Daraus generiert
+  `npm run gen-timers` (schreibt nach `/etc/systemd/system`, `--out=<dir>` für
+  Tests) → danach `systemctl daemon-reload`: PRO aktivem Markt einen Kür-Timer
+  (`ape-signal-scan-preus` und/oder `ape-signal-scan-prexetra`) plus
+  `ape-signal-tick` (kombiniertes Fenster) und `ape-signal-tick-close`. Beim
+  Moduswechsel zusätzlich die neu erzeugten Kür-Timer aktivieren bzw. alte
+  deaktivieren, z. B. `systemctl enable --now ape-signal-scan-prexetra.timer`.
+  Ohne Generator-Lauf gelten die committeten US-Baseline-Timer. Der Tick feuert
+  jede Minute im Fenster; das effektive Intervall drosselt zur Laufzeit (live per
+  Telegram `/ticker N`). Der PreOpen-Scan (08:45) ist nicht session-getrieben.
+- **Börsen-Feiertage:** NYSE + Xetra liegen statisch in
+  `src/config/marketCalendar.ts` (2026/2027 — jährlich pflegen). Eine
+  Pre-Session-Kür wird an einem Feiertag IHRES Marktes übersprungen (Telegram-
+  Notiz); der Tick pausiert nur, wenn ALLE aktiven Märkte zu sind. So läuft z. B.
+  an Juneteenth (US zu) die Xetra-Kür normal, die US-Kür nicht.
 - `APE_LANGUAGE` (optional, `de` | `en`, default `de`) sets the language of ALL
   AI free text (Persona-Journal/Kür/Tick, Scan- und Strategie-Freitexte). It
   belongs in `/etc/ape-signal.env` (read by the systemd core: scan/tick/listener)
