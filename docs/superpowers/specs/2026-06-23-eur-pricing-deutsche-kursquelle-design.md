@@ -1,7 +1,9 @@
 # EUR-Pricing & deutsche Live-Kursquelle (gegen Stale-US-Data)
 
 **Datum:** 2026-06-23 · **Branch:** `feat/eur-deutsche-kursquelle` (auf `origin/master`)
-**Status:** FREIGEGEBEN — Phase 0 abgeschlossen, Phase 1 startet.
+**Status:** UMGESETZT (Kern) — Phase 0 + Phase 1 + Phase 2 (alle vier Kurspfade auf
+EUR) committed, 516 Tests grün. Siehe ADR 0005. **Offen:** EUR-Anzeige (Klarname + €)
+in Telegram/UI; FX/gemischte Währungen (Folge-PR).
 
 **Sign-off Lars (2026-06-23):**
 - **v1 = nur EUR-gelistete Namen, kein FX.** Reine US-Namen ohne brauchbare deutsche
@@ -162,7 +164,33 @@ verworfen); Frische-Heuristik = `high==low==close`/`change==0`.
 ## Phasen-Vorschlag
 - **Phase 0 (vor Code) ✅ ABGESCHLOSSEN:** VPS-Proben 1+2 — alle Annahmen gehärtet
   (Endpoint, Felder, ISIN-Filter, EMA/RSI, US-ISIN, Venue=Tradegate).
-- **Phase 1:** `tvScanner`-Markt + `listingMap` (ISIN-Join, Tradegate-Pick) +
-  `currency`/`name` an den Typen.
-- **Phase 2:** Kür + Tick auf EUR-Quelle; Klarnamen in UI/Telegram.
-- **Phase 3:** Universum-Rebalance + `.env`/Doku/frischer EUR-Depot-Start.
+- **Phase 1 ✅ (`7169f9b`):** `tvScanner`-Markt + `listingMap` (ISIN-Join, Tradegate-Pick).
+- **Phase 2a ✅ (`b1d0001`):** `ListingRef` an den Typen + Fill-Durchreichung +
+  `fetchTickQuotesEur`.
+- **Phase 2b ✅ (`580cb14`):** `eurPricing.ts`; **alle vier Kurspfade** (Kür,
+  Monitor-Tick, Intraday, Setup-Radar) auf EUR.
+- **Phase 2d (offen):** Klarnamen + € in Telegram/UI (nach UI-PRs #6/#7).
+- **Phase 3 (Folge-PR):** Universum-Rebalance (weniger Apewisdom); FX/gemischte Währungen.
+
+## Deploy & Migration — frischer EUR-Start (⚠️ Sperre)
+
+**Kritisch:** Ein bestehendes `portfolio.json` mit Legacy-USD-Positionen **ohne
+`isin`/`deSymbol`** wird vom EUR-Fetcher nicht mehr gepricet → „Monitor blind",
+keine Stop-Prüfung. Der neue Tick darf NICHT gegen das alte Portfolio laufen.
+
+**Runbook (auf dem Lab-Server, vor dem ersten Tick mit dem neuen Image):**
+1. Dienste, die das Depot anfassen, stoppen (scan/tick/listener).
+2. Altes Depot archivieren (nicht löschen — Nachvollziehbarkeit):
+   ```
+   cd /opt/ape-signal/data
+   mkdir -p archive/2026-06-23-usd
+   mv portfolio.json journal.md ticks archive/2026-06-23-usd/ 2>/dev/null || true
+   ```
+   `loadPortfolio` legt beim nächsten Lauf ein frisches EUR-Depot aus
+   `PAPER_START_BALANCE` an (Default 2000 → jetzt **EUR**).
+3. Optional Startkapital prüfen/setzen: `PAPER_START_BALANCE` im Env.
+4. UI-Container (`ape-signal-ui`) + Dienste neu starten; erster PreXetra-/PreUS-Lauf
+   öffnet dann EUR-Positionen mit `deSymbol`/`isin`, die der Monitor pricet.
+
+Die hängende QCOM-USD-Position ist mit dem Archivieren erledigt (Paper-Depot,
+kein realer Bestand).
