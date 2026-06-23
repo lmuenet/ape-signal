@@ -2,7 +2,17 @@
 // from the VPS). Used by both the trending price/trend lookup (marketData.ts)
 // and the relative-strength long/short screener (scan/rsScreener.ts).
 
-export const TV_SCANNER_ENDPOINT = "https://scanner.tradingview.com/america/scan";
+/** Scanner markets we query. `america` = US listings (USD), `germany` = deutsche
+ *  Venues (EUR, e.g. Tradegate/XETR). Same column schema, just a different path. */
+export type ScanMarket = "america" | "germany";
+
+/** Scanner endpoint URL for a market (default: US listings, the historical default). */
+export function scanEndpoint(market: ScanMarket = "america"): string {
+  return `https://scanner.tradingview.com/${market}/scan`;
+}
+
+/** Back-compat constant: the US endpoint (kept for existing imports). */
+export const TV_SCANNER_ENDPOINT = scanEndpoint("america");
 
 export type FetchFn = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 
@@ -20,9 +30,14 @@ export function num(v: unknown): number {
   return typeof v === "number" ? v : 0;
 }
 
-/** POST a scanner query. Throws on a non-ok status so callers can degrade it. */
-export async function postScan(fetchFn: FetchFn, body: unknown): Promise<ScanResponse> {
-  const res = await fetchFn(TV_SCANNER_ENDPOINT, {
+/** POST a scanner query. Throws on a non-ok status so callers can degrade it.
+ *  `market` selects the listings universe (default: US, backward-compatible). */
+export async function postScan(
+  fetchFn: FetchFn,
+  body: unknown,
+  market: ScanMarket = "america",
+): Promise<ScanResponse> {
+  const res = await fetchFn(scanEndpoint(market), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
