@@ -17,6 +17,15 @@ export interface QuoteHolding {
   isin?: string;
 }
 
+/** Dedup positions/orders into one EUR holding per ticker (first listing wins). */
+export function toHoldings(items: Array<{ ticker: string; deSymbol?: string; isin?: string }>): QuoteHolding[] {
+  const byTicker = new Map<string, QuoteHolding>();
+  for (const x of items) {
+    if (!byTicker.has(x.ticker)) byTicker.set(x.ticker, { ticker: x.ticker, deSymbol: x.deSymbol, isin: x.isin });
+  }
+  return [...byTicker.values()];
+}
+
 /** Number-or-undefined: missing/non-numeric indicator cells stay absent (NOT 0 — a 0 EMA would be a false signal). */
 const optNum = (v: unknown): number | undefined =>
   typeof v === "number" && Number.isFinite(v) ? v : undefined;

@@ -16,6 +16,7 @@ import {
 import { buildTickPrompt } from "./prompts";
 import { parseTickResponse } from "./decision";
 import { healthLine, recordQuoteFailure, recordQuoteSuccess, type HealthState } from "./health";
+import { toHoldings, type QuoteHolding } from "./quotes";
 import { WAKE, type Adjustment, type Portfolio, type QuoteMap, type TickEvent } from "./types";
 import type { Language } from "../core/language";
 import { ClaudeError } from "../claude/invoke";
@@ -26,7 +27,8 @@ export interface TickDeps {
   savePortfolio: (p: Portfolio) => void;
   appendJournal: (title: string, body: string) => void;
   readJournalTail: () => string;
-  fetchQuotes: (tickers: string[]) => Promise<QuoteMap>;
+  /** Price the held instruments on their stored EUR venue (deSymbol). Keyed by ticker. */
+  fetchQuotes: (holdings: QuoteHolding[]) => Promise<QuoteMap>;
   /** Persist this tick's quotes into the tick history (ADR 0004). Optional in tests. */
   recordTick?: (day: string, atIso: string, quotes: QuoteMap) => void;
   /** Operational health for `day` (Lebenszeichen spec): stats + failure counters. */
@@ -66,7 +68,11 @@ export async function runTick(opts: TickOptions, deps: TickDeps): Promise<void> 
   const stamp = deps.berlinStamp(now);
 
   let portfolio = deps.loadPortfolio();
-  const tickers = [...new Set([...portfolio.positions, ...portfolio.orders].map((x) => x.ticker))];
+  // One holding per ticker, carrying the EUR venue (deSymbol/isin) so the fetch
+  // prices each on the venue it was entered on. `tickers` stays the dedup'd
+  // ticker list the activity/skip guards below use.
+  const holdings = toHoldings([...portfolio.positions, ...portfolio.orders]);
+  const tickers = holdings.map((h) => h.ticker);
   const hadActivity =
     portfolio.positions.length > 0 ||
     portfolio.orders.length > 0 ||
@@ -96,7 +102,7 @@ export async function runTick(opts: TickOptions, deps: TickDeps): Promise<void> 
   let staleClose = false;
   if (tickers.length > 0) {
     try {
-      quotes = await deps.fetchQuotes(tickers);
+      quotes = await deps.fetchQuotes(holdings);
     } catch (err) {
       console.error(`[tick] quote fetch failed: ${err instanceof Error ? err.message : String(err)}`);
       const failed = recordQuoteFailure(health);
