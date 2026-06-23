@@ -1,6 +1,7 @@
 // Depot-UI frontend (read-only). LightweightCharts is loaded globally via
 // /vendor/lightweight-charts.js (v4 standalone build).
 import { buildLegend } from "./legend.js";
+import { TV_EMBED_SRC, tvWidgetConfig } from "./liveChart.js";
 
 const $ = (sel) => document.querySelector(sel);
 const usd = (n) => `${n < 0 ? "-" : ""}$${Math.abs(n).toFixed(2)}`;
@@ -51,8 +52,44 @@ function positionCard(pos, quotes) {
     ${pnl === null ? "" : `<span class="${pnl >= 0 ? "pnl-pos" : "pnl-neg"}">P&amp;L ${usd(pnl)}</span>`}
     <div class="meta">${pos.thesis ?? ""}</div>
     ${legendBar(pos, quotes)}
-    <div class="chart"></div>`;
+    <div class="chart"></div>
+    <button class="live-toggle" type="button">📈 Live-Chart (TradingView)</button>
+    <div class="live" hidden></div>`;
   return el;
+}
+
+// Lazily mount the TradingView Advanced-Chart embed into `container`. Each widget
+// is its own iframe, so we build it only on first expand and never twice.
+function mountLiveChart(container, ticker) {
+  const widget = document.createElement("div");
+  widget.className = "tradingview-widget-container";
+  const inner = document.createElement("div");
+  inner.className = "tradingview-widget-container__widget";
+  const script = document.createElement("script");
+  script.type = "text/javascript";
+  script.async = true;
+  script.src = TV_EMBED_SRC;
+  // The embed loader reads its config from its own (inline) text content.
+  script.text = JSON.stringify(tvWidgetConfig(ticker));
+  widget.append(inner, script);
+  container.appendChild(widget);
+}
+
+// Wire the per-card "Live-Chart" toggle: first open mounts the embed (lazy),
+// further clicks just show/hide the box.
+function wireLiveChart(card, ticker) {
+  const btn = card.querySelector(".live-toggle");
+  const box = card.querySelector(".live");
+  let mounted = false;
+  btn.addEventListener("click", () => {
+    const opening = box.hasAttribute("hidden");
+    box.toggleAttribute("hidden", !opening);
+    if (opening && !mounted) {
+      mountLiveChart(box, ticker);
+      mounted = true;
+    }
+    btn.textContent = opening ? "▲ Live-Chart einklappen" : "📈 Live-Chart (TradingView)";
+  });
 }
 
 async function drawTickerChart(container, pos) {
@@ -174,6 +211,7 @@ async function load() {
     const card = positionCard(pos, quotes);
     posRoot.appendChild(card);
     drawTickerChart(card.querySelector(".chart"), pos).catch(console.error);
+    wireLiveChart(card, pos.ticker);
   }
 
   const orderRoot = $("#orders");
