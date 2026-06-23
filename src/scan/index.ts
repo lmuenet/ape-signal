@@ -4,6 +4,7 @@ import { marketForScanLabel, marketDisplay } from "../config/session";
 import { marketIsOpen } from "../config/marketCalendar";
 import { fetchApewisdomSnapshot, fetchNextEarnings, fetchTradingViewTrend } from "../core/ape-intel";
 import { createTelegramClient } from "../telegram/client";
+import { createNotifier, parseVerbosity } from "../telegram/notify";
 import { runScan, type ScanDeps } from "./pipeline";
 import { fetchRsLongShort, fetchReadyToTrend, fetchStrongDaily, fetchMomentum } from "./rsScreener";
 import { createRedditApiRunner } from "../reddit/redditApi";
@@ -51,17 +52,21 @@ async function main(): Promise<void> {
   // Watchdog for every autonomous Claude call: a hard timeout (kill) plus an
   // interim "still working" Telegram ping, so a hanging or usage-limited backend
   // is visible instead of a silent gap (Finding E / D1).
+  // Verbosity gate: autonomous messages carry a category; TELEGRAM_VERBOSITY
+  // decides what reaches the chat (the ape-ui journal keeps everything).
+  const notify = createNotifier((text) => telegram.sendMessage(text), parseVerbosity(process.env.TELEGRAM_VERBOSITY));
+
   const watchdog = resolveWatchdog(process.env);
   const onSlow = (info: { label: string; elapsedMs: number }): void => {
-    void telegram
-      .sendMessage(`⏳ Claude: „${info.label}" läuft noch (seit ${Math.round(info.elapsedMs / 60_000)} min) — evtl. ausgelastet/limitiert.`)
-      .catch(() => {});
+    void Promise.resolve(
+      notify(`⏳ Claude: „${info.label}" läuft noch (seit ${Math.round(info.elapsedMs / 60_000)} min) — evtl. ausgelastet/limitiert.`, "progress"),
+    ).catch(() => {});
   };
 
   const deps: ScanDeps = {
     fetchSnapshot: () => fetchApewisdomSnapshot(fetch),
     claudeRunner: createClaudeRunner({ label: "Scan-Challenge", onSlow, ...watchdog }),
-    send: (text) => telegram.sendMessage(text),
+    send: notify,
     // Live price + 1W/1M/3M trend via the TradingView scanner (free, no key,
     // reachable from the VPS). A failure degrades to "no prices" in the pipeline.
     fetchTrend: (tickers) => fetchTradingViewTrend(tickers, fetch),
@@ -94,7 +99,12 @@ async function main(): Promise<void> {
       });
   }
 
-  const challenge = await runScan({ label: LABEL, limit: LIMIT }, deps);
+  // The autonomous pre-session report is muted as "research"; an explicit manual
+  // run (scan@Manual) keeps it as "trade".
+  const challenge = await runScan(
+    { label: LABEL, limit: LIMIT, reportCategory: LABEL.toLowerCase() === "manual" ? "trade" : "research" },
+    deps,
+  );
   console.log(`[scan] ${LABEL} report sent.`);
 
   // Kandidatenkür: opt-in (ENABLE_PAPER_TRADING), once per active market's
@@ -121,7 +131,7 @@ async function main(): Promise<void> {
         researchRunner: createClaudeRunner({ model: "sonnet", allowedTools: ["WebSearch", "Skill"], label: "Research", onSlow, ...watchdog }),
         debateRunner: createClaudeRunner({ model: "sonnet", label: "Debatte", onSlow, ...watchdog }),
         decideRunner: createClaudeRunner({ model: "opus", label: "Entscheidung", onSlow, ...watchdog }),
-        send: (text) => telegram.sendMessage(text),
+        send: notify,
         saveKuer: (a) => saveKuerArtifact(dir, a),
         saveWatchlist: (s) => saveWatchlist(dir, s),
         berlinDay,

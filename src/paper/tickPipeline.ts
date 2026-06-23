@@ -19,6 +19,7 @@ import { healthLine, recordQuoteFailure, recordQuoteSuccess, type HealthState } 
 import { WAKE, type Adjustment, type Portfolio, type QuoteMap, type TickEvent } from "./types";
 import type { Language } from "../core/language";
 import { ClaudeError } from "../claude/invoke";
+import type { Notify } from "../telegram/notify";
 
 export interface TickDeps {
   loadPortfolio: () => Portfolio;
@@ -34,7 +35,7 @@ export interface TickDeps {
   saveHealth: (h: HealthState) => void;
   /** Sonnet runner (the manager role). */
   claudeRunner: (prompt: string) => Promise<string>;
-  send: (text: string) => Promise<void>;
+  send: Notify;
   now?: () => Date;
   berlinDay: (d: Date) => string;
   berlinStamp: (d: Date) => string;
@@ -102,7 +103,7 @@ export async function runTick(opts: TickOptions, deps: TickDeps): Promise<void> 
       health = failed.health;
       trySaveHealth(deps, health);
       if (failed.alert) {
-        await deps.send(`⚠️ Monitor blind: ${health.consecutiveQuoteFailures} Ticks ohne Kurse — Stops werden nicht geprüft.`);
+        await deps.send(`⚠️ Monitor blind: ${health.consecutiveQuoteFailures} Ticks ohne Kurse — Stops werden nicht geprüft.`, "alert");
       }
       // No quotes → no evidence → skipping the monitor tick is the safe move
       // (state untouched; the next tick's day-extreme rule catches up).
@@ -114,7 +115,7 @@ export async function runTick(opts: TickOptions, deps: TickDeps): Promise<void> 
       const ok = recordQuoteSuccess(health);
       health = ok.health;
       trySaveHealth(deps, health);
-      if (ok.allClear) await deps.send("✅ Monitor wieder ok — Kurse kommen wieder durch.");
+      if (ok.allClear) await deps.send("✅ Monitor wieder ok — Kurse kommen wieder durch.", "alert");
       try {
         deps.recordTick?.(day, now.toISOString(), quotes);
       } catch (err) {
@@ -215,7 +216,7 @@ export async function runTick(opts: TickOptions, deps: TickDeps): Promise<void> 
       // Surface the breach even when the manager call failed (deterministic).
       const text = breachLines.length > 0 ? `${breachLines.join("\n")}\n${reason}` : reason;
       try {
-        await deps.send(text);
+        await deps.send(text, "progress");
       } catch (sendErr) {
         console.error(`[tick] failed to send manager-failure alert: ${sendErr instanceof Error ? sendErr.message : String(sendErr)}`);
       }
@@ -241,6 +242,6 @@ export async function runTick(opts: TickOptions, deps: TickDeps): Promise<void> 
       healthLine: healthLine(health),
     });
     deps.appendJournal("Tagesabschluss", summary);
-    await deps.send(summary);
+    await deps.send(summary, "digest");
   }
 }
