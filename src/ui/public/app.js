@@ -4,6 +4,9 @@ import { buildLegend } from "./legend.js";
 
 const $ = (sel) => document.querySelector(sel);
 const usd = (n) => `${n < 0 ? "-" : ""}$${Math.abs(n).toFixed(2)}`;
+const signedUsd = (n) => `${n >= 0 ? "+" : "-"}$${Math.abs(n).toFixed(2)}`;
+const signedPct = (n) => `${n >= 0 ? "+" : ""}${n.toFixed(1)}%`;
+const tone = (n) => (n >= 0 ? "pnl-pos" : "pnl-neg");
 const ts = (iso) => Math.floor(Date.parse(iso) / 1000);
 
 const CHART_OPTS = {
@@ -67,6 +70,30 @@ async function drawTickerChart(container, pos) {
   priceLine(line, pos.wakeAbove, "Wake↑", "#caa75c");
   priceLine(line, pos.wakeBelow, "Wake↓", "#caa75c");
   chart.timeScale().fitContent();
+}
+
+function renderPerformance(rows) {
+  const root = $("#performance");
+  if (rows.length === 0) {
+    root.innerHTML = '<span class="empty">Noch keine abgeschlossenen Trades.</span>';
+    return;
+  }
+  const head = "<tr><th>Datum</th><th>Equity</th><th>P&amp;L (Tag)</th><th>Trades</th><th>Kum. P&amp;L</th><th>Rendite</th></tr>";
+  // Newest day first — the latest state sits at the top of the prominent table.
+  const body = [...rows]
+    .reverse()
+    .map(
+      (r) => `<tr>
+        <td>${r.day}</td>
+        <td>${usd(r.equity)}</td>
+        <td class="${tone(r.realizedPnl)}">${signedUsd(r.realizedPnl)}</td>
+        <td>${r.trades}</td>
+        <td class="${tone(r.cumulativePnl)}">${signedUsd(r.cumulativePnl)}</td>
+        <td class="${tone(r.returnPct)}">${signedPct(r.returnPct)}</td>
+      </tr>`,
+    )
+    .join("");
+  root.innerHTML = `<table class="perf"><thead>${head}</thead><tbody>${body}</tbody></table>`;
 }
 
 function renderJournal(md) {
@@ -138,6 +165,8 @@ async function load() {
     `Equity <b>${usd(state.equity)}</b> · frei <b>${usd(portfolio.balance)}</b>` +
     ` · ${portfolio.positions.length} Positionen, ${portfolio.orders.length} Orders` +
     (state.generatedAt ? ` · Stand ${new Date(state.generatedAt).toLocaleString("de-DE")}` : "");
+
+  renderPerformance(await api("/api/daily"));
 
   const posRoot = $("#positions");
   posRoot.innerHTML = portfolio.positions.length ? "" : '<span class="empty">keine</span>';
