@@ -4,6 +4,7 @@
 // dead token never fails silently.
 import { loadEnv } from "../config/env";
 import { createTelegramClient } from "../telegram/client";
+import { createNotifier, parseVerbosity } from "../telegram/notify";
 import { createClaudeRunner, resolveWatchdog } from "../claude/invoke";
 import { fetchTickQuotes } from "./quotes";
 import { appendTickHistory } from "./tickHistory";
@@ -34,10 +35,12 @@ async function main(): Promise<void> {
     return;
   }
   const telegram = createTelegramClient({ botToken: env.telegramBotToken, chatId: env.telegramChatId });
+  // Verbosity gate (the ape-ui journal keeps everything; TELEGRAM_VERBOSITY only mutes the chat).
+  const notify = createNotifier((text) => telegram.sendMessage(text), parseVerbosity(process.env.TELEGRAM_VERBOSITY));
   const onSlow = (info: { label: string; elapsedMs: number }): void => {
-    void telegram
-      .sendMessage(`⏳ Claude: „${info.label}" läuft noch (seit ${Math.round(info.elapsedMs / 60_000)} min) — evtl. ausgelastet/limitiert.`)
-      .catch(() => {});
+    void Promise.resolve(
+      notify(`⏳ Claude: „${info.label}" läuft noch (seit ${Math.round(info.elapsedMs / 60_000)} min) — evtl. ausgelastet/limitiert.`, "progress"),
+    ).catch(() => {});
   };
   const dir = dataDir();
   const tickIntervalMin = resolveTickInterval(dir, loadSession(process.env).tickIntervalMin);
@@ -51,7 +54,7 @@ async function main(): Promise<void> {
     appendJournal: (title: string, body: string) => appendJournal(dir, title, body),
     readJournalTail: () => readJournalTail(dir),
     fetchQuotes: (tickers: string[]) => fetchTickQuotes(tickers, fetch),
-    send: (text: string) => telegram.sendMessage(text),
+    send: notify,
     berlinDay,
     berlinStamp,
     language: env.language,

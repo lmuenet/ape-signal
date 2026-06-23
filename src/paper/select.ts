@@ -13,6 +13,7 @@ import { seedWatchlist } from "./watchlist";
 import type { KuerArtifact } from "./kuerArtifact";
 import type { Language } from "../core/language";
 import { ClaudeError } from "../claude/invoke";
+import type { Notify } from "../telegram/notify";
 
 export interface KuerDeps {
   loadPortfolio: () => Portfolio;
@@ -26,7 +27,7 @@ export interface KuerDeps {
   debateRunner: (prompt: string) => Promise<string>;
   /** Opus — the decider role. */
   decideRunner: (prompt: string) => Promise<string>;
-  send: (text: string) => Promise<void>;
+  send: Notify;
   /** Persist the day's Kür artifact (Kür-Ansicht spec). Failures must not break the Kür. */
   saveKuer: (artifact: KuerArtifact) => void;
   /** Seed the intraday Setup-Radar watchlist (Stufe 2). Optional; failures must not break the Kür. */
@@ -84,7 +85,7 @@ async function tryDegradeAlert(deps: KuerDeps, stage: string, err: unknown): Pro
   const alert = degradeAlert(stage, err);
   if (!alert) return;
   try {
-    await deps.send(alert);
+    await deps.send(alert, "progress");
   } catch (sendErr) {
     console.error(`[kuer] degrade alert send failed: ${sendErr instanceof Error ? sendErr.message : String(sendErr)}`);
   }
@@ -199,6 +200,7 @@ export async function runKuer(opts: KuerOptions, deps: KuerDeps): Promise<void> 
         err.kind === "limit"
           ? "⚠️ Mr Ape: Claude ist aktuell limitiert (Usage-Limit) — Kandidatenkür heute ausgefallen. Sobald das Limit zurückgesetzt ist, geht es wieder weiter."
           : "⚠️ Mr Ape: Claude hat zu lange gebraucht (Timeout) — Kandidatenkür heute ausgefallen. Morgen wieder.",
+        "alert",
       );
       return;
     }
@@ -218,7 +220,7 @@ export async function runKuer(opts: KuerOptions, deps: KuerDeps): Promise<void> 
       rejected: [],
       status: "skipped-unreadable",
     });
-    await deps.send("⚠️ Mr Ape: Kandidatenkür heute ausgefallen (Entscheidung nicht lesbar). Morgen wieder.");
+    await deps.send("⚠️ Mr Ape: Kandidatenkür heute ausgefallen (Entscheidung nicht lesbar). Morgen wieder.", "alert");
     return;
   }
 
@@ -266,7 +268,7 @@ export async function runKuer(opts: KuerOptions, deps: KuerDeps): Promise<void> 
   const mirror = formatDecisionMirror(dossier, debate);
   if (mirror !== "") {
     try {
-      await deps.send(mirror);
+      await deps.send(mirror, "research");
     } catch (err) {
       console.error(`[kuer] mirror send failed: ${err instanceof Error ? err.message : String(err)}`);
     }

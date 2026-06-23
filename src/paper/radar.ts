@@ -6,6 +6,7 @@
 import { detectSetups } from "./setupRadar";
 import { entriesForDay } from "./watchlist";
 import type { Portfolio, QuoteMap, SetupKind, SetupTrigger, WatchlistEntry, WatchlistState } from "./types";
+import type { Notify } from "../telegram/notify";
 
 export interface RadarDeps {
   loadPortfolio: () => Portfolio;
@@ -13,7 +14,7 @@ export interface RadarDeps {
   saveWatchlist: (s: WatchlistState) => void;
   fetchQuotes: (tickers: string[]) => Promise<QuoteMap>;
   appendJournal: (title: string, body: string) => void;
-  send: (text: string) => Promise<void>;
+  send: Notify;
   now?: () => Date;
   berlinDay: (d: Date) => string;
   berlinStamp: (d: Date) => string;
@@ -48,7 +49,7 @@ export async function runSetupRadar(deps: RadarDeps): Promise<void> {
 
   const firedByTicker = new Map<string, SetupKind[]>();
   for (const t of triggers) {
-    await deps.send(`⚡ Setup ${t.ticker} @ ${t.price}: ${t.note}`);
+    await deps.send(`⚡ Setup ${t.ticker} @ ${t.price}: ${t.note}`, "research");
     deps.appendJournal(`Setup-Radar ${stamp.slice(11)}`, `${t.ticker}: ${t.note}`);
     firedByTicker.set(t.ticker, [...(firedByTicker.get(t.ticker) ?? []), t.kind]);
   }

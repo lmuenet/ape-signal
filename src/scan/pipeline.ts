@@ -15,18 +15,21 @@ import { offRadar } from "./offradar";
 import type { RedditCandidate } from "../reddit/crawl";
 import type { EarningsRow } from "./earnings";
 import type { RsResult } from "./rsScreener";
+import type { Notify, NotifyCategory } from "../telegram/notify";
 
 export interface ScanOptions {
   label: string;
   limit: number;
   offRadarMinMentions?: number;
   offRadarLimit?: number;
+  /** Category for the report send — autonomous pre-session scans mute it as "research". */
+  reportCategory?: NotifyCategory;
 }
 
 export interface ScanDeps {
   fetchSnapshot: () => Promise<ApewisdomSnapshot>;
   claudeRunner: (prompt: string) => Promise<string>;
-  send: (text: string) => Promise<void>;
+  send: Notify;
   crawlReddit?: () => Promise<RedditCandidate[]>;
   fetchEarningsToday?: (tickers: string[]) => Promise<EarningsRow[]>;
   fetchTrend?: (tickers: string[]) => Promise<Map<string, TrendQuote>>;
@@ -186,7 +189,7 @@ export async function runScan(
     offRadarTickers: offRadarRows.map((r) => r.ticker),
     earningsToday,
   });
-  await deps.send(report);
+  await deps.send(report, options.reportCategory ?? "trade");
 
   return challenge;
 }

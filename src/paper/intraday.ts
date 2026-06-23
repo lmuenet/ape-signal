@@ -12,6 +12,7 @@ import { parseDecision, parseDossier, type Dossier } from "./decision";
 import { GUARDRAILS, type Portfolio, type QuoteMap, type SetupTrigger } from "./types";
 import type { Language } from "../core/language";
 import { ClaudeError } from "../claude/invoke";
+import type { Notify } from "../telegram/notify";
 
 export interface IntradayDeps {
   loadPortfolio: () => Portfolio;
@@ -23,7 +24,7 @@ export interface IntradayDeps {
   researchRunner: (prompt: string) => Promise<string>;
   /** Opus — the decider for the mini-Kür. */
   decideRunner: (prompt: string) => Promise<string>;
-  send: (text: string) => Promise<void>;
+  send: Notify;
   now?: () => Date;
   berlinDay: (d: Date) => string;
   berlinStamp: (d: Date) => string;
@@ -65,7 +66,7 @@ export async function runIntradayOpportunity(trigger: SetupTrigger, deps: Intrad
 
   // Start-Ping: signalisiert, dass der Mini-Kür-Prozess live läuft (best-effort).
   try {
-    await deps.send(`🦍 Mr Ape prüft Intraday-Chance ${ticker} (${trigger.note}) …`);
+    await deps.send(`🦍 Mr Ape prüft Intraday-Chance ${ticker} (${trigger.note}) …`, "progress");
   } catch (err) {
     console.error(`[intraday] start-ping send failed: ${err instanceof Error ? err.message : String(err)}`);
   }
@@ -75,11 +76,11 @@ export async function runIntradayOpportunity(trigger: SetupTrigger, deps: Intrad
     quotes = await deps.fetchQuotes([ticker]);
   } catch (err) {
     console.error(`[intraday] quote fetch failed for ${ticker}: ${err instanceof Error ? err.message : String(err)}`);
-    await deps.send(`⚠️ Mr Ape — Intraday ${ticker}: Kurse nicht verfügbar, übersprungen.`);
+    await deps.send(`⚠️ Mr Ape — Intraday ${ticker}: Kurse nicht verfügbar, übersprungen.`, "progress");
     return;
   }
   if (!quotes[ticker]) {
-    await deps.send(`⚠️ Mr Ape — Intraday ${ticker}: keine Kurse, übersprungen.`);
+    await deps.send(`⚠️ Mr Ape — Intraday ${ticker}: keine Kurse, übersprungen.`, "progress");
     return;
   }
 
@@ -119,7 +120,7 @@ export async function runIntradayOpportunity(trigger: SetupTrigger, deps: Intrad
         ? "Timeout"
         : "Fehler";
     deps.appendJournal(`Intraday ${stamp.slice(11)} — ${ticker}`, `Nicht entschieden (${why}).`);
-    await deps.send(`⚠️ Mr Ape — Intraday ${ticker}: nicht entschieden (${why}).`);
+    await deps.send(`⚠️ Mr Ape — Intraday ${ticker}: nicht entschieden (${why}).`, "progress");
     return;
   }
 
@@ -128,12 +129,12 @@ export async function runIntradayOpportunity(trigger: SetupTrigger, deps: Intrad
   if (!decision || !trade) {
     const note = decision?.journal?.trim() || "kein klares Setup.";
     deps.appendJournal(`Intraday ${stamp.slice(11)} — ${ticker}`, `Kein Trade. ${note}`);
-    await deps.send(`🦍 Mr Ape — Intraday ${ticker}: kein Trade. ${note}`);
+    await deps.send(`🦍 Mr Ape — Intraday ${ticker}: kein Trade. ${note}`, "progress");
     return;
   }
   if (trade.entry === "market") {
     deps.appendJournal(`Intraday ${stamp.slice(11)} — ${ticker}`, "Verworfen: nur Limit-Einstiege erlaubt.");
-    await deps.send(`🦍 Mr Ape — Intraday ${ticker}: Vorschlag verworfen (nur Limit erlaubt).`);
+    await deps.send(`🦍 Mr Ape — Intraday ${ticker}: Vorschlag verworfen (nur Limit erlaubt).`, "progress");
     return;
   }
 
@@ -146,7 +147,7 @@ export async function runIntradayOpportunity(trigger: SetupTrigger, deps: Intrad
   if (accepted.length === 0) {
     const reason = rejected[0]?.reason ?? "abgelehnt";
     deps.appendJournal(`Intraday ${stamp.slice(11)} — ${ticker}`, `Order abgelehnt (${reason}).`);
-    await deps.send(`🦍 Mr Ape — Intraday ${ticker}: Order abgelehnt (${reason}).`);
+    await deps.send(`🦍 Mr Ape — Intraday ${ticker}: Order abgelehnt (${reason}).`, "progress");
     return;
   }
 
