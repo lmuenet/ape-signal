@@ -113,6 +113,11 @@ function closeTrade(
       closedAt: now,
       source: pos.source,
       thesis: pos.thesis,
+      // Carry the EUR listing into history (clear name + currency for the UI/journal).
+      deSymbol: pos.deSymbol,
+      isin: pos.isin,
+      name: pos.name,
+      currency: pos.currency,
     },
     exitFee,
   };
@@ -190,6 +195,12 @@ export function applyTick(p: Portfolio, quotes: QuoteMap, opts: TickOptions): Ti
           thesis: order.thesis,
           fees: entryFee,
           source: order.source,
+          // Carry the EUR listing onto the position so the monitor tick prices
+          // the same venue this order was entered on.
+          deSymbol: order.deSymbol,
+          isin: order.isin,
+          name: order.name,
+          currency: order.currency,
         };
         positions.push(position);
         openedThisTick.add(position.id);
@@ -395,6 +406,12 @@ export function placeOrders(
       thesis: d.thesis ?? "",
       createdAt: opts.now,
       day: opts.day,
+      // EUR listing carried from the resolved decision (ADR 0005) — undefined on
+      // legacy/US decisions, in which case pricing falls back to the US ticker.
+      deSymbol: d.deSymbol,
+      isin: d.isin,
+      name: d.name,
+      currency: d.currency,
     };
     portfolio = { ...portfolio, balance: portfolio.balance - stake, orders: [...portfolio.orders, order] };
     accepted.push(order);

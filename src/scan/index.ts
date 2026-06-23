@@ -14,7 +14,7 @@ import { createClaudeRunner, resolveWatchdog } from "../claude/invoke";
 import { runKuer } from "../paper/select";
 import { saveKuerArtifact } from "../paper/kuerArtifact";
 import { saveWatchlist } from "../paper/watchlist";
-import { fetchTickQuotes } from "../paper/quotes";
+import { resolveAndFetchEur } from "../paper/eurPricing";
 import {
   appendJournal,
   berlinDay,
@@ -127,7 +127,9 @@ async function main(): Promise<void> {
         savePortfolio: (p) => savePortfolio(dir, p),
         appendJournal: (title, body) => appendJournal(dir, title, body),
         readJournalTail: () => readJournalTail(dir),
-        fetchQuotes: (tickers) => fetchTickQuotes(tickers, fetch),
+        // EUR pricing (ADR 0005): resolve candidates to their German venue, price
+        // held names on their stored venue, return EUR quotes + listings to enrich.
+        fetchQuotes: (tickers, held) => resolveAndFetchEur(tickers, fetch, held),
         researchRunner: createClaudeRunner({ model: "sonnet", allowedTools: ["WebSearch", "Skill"], label: "Research", onSlow, ...watchdog }),
         debateRunner: createClaudeRunner({ model: "sonnet", label: "Debatte", onSlow, ...watchdog }),
         decideRunner: createClaudeRunner({ model: "opus", label: "Entscheidung", onSlow, ...watchdog }),

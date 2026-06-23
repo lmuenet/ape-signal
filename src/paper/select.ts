@@ -8,7 +8,9 @@ import { placeOrders, tradesPlacedToday } from "./engine";
 import { formatDecisionMirror, formatKuer, orderLine, renderPortfolio, renderQuotes, renderTrackRecord } from "./format";
 import { buildDebatePrompt, buildDecisionPrompt, buildDossierPrompt } from "./prompts";
 import { parseDebate, parseDecision, parseDossier, type Debate, type Dossier } from "./decision";
-import { GUARDRAILS, type Portfolio, type QuoteMap, type WatchlistEntry, type WatchlistState } from "./types";
+import { GUARDRAILS, type Portfolio, type WatchlistEntry, type WatchlistState } from "./types";
+import { enrichWithListing, type EurPricing } from "./eurPricing";
+import { toHoldings, type QuoteHolding } from "./quotes";
 import { seedWatchlist } from "./watchlist";
 import type { KuerArtifact } from "./kuerArtifact";
 import type { Language } from "../core/language";
@@ -20,7 +22,10 @@ export interface KuerDeps {
   savePortfolio: (p: Portfolio) => void;
   appendJournal: (title: string, body: string) => void;
   readJournalTail: () => string;
-  fetchQuotes: (tickers: string[]) => Promise<QuoteMap>;
+  /** Resolve candidate tickers to their German EUR listings and price them (held
+   *  names priced on their stored venue). Returns EUR quotes (by ticker) + the
+   *  resolved listings (to enrich decisions + show clear names). Throws → caller alerts. */
+  fetchQuotes: (tickers: string[], held: QuoteHolding[]) => Promise<EurPricing>;
   /** Sonnet with WebSearch (+ Skill for /last30days) — the researcher role. */
   researchRunner: (prompt: string) => Promise<string>;
   /** Sonnet without tools — the Advocatus-Diaboli role (bull/bear debate). */
@@ -141,14 +146,12 @@ export async function runKuer(opts: KuerOptions, deps: KuerDeps): Promise<void> 
     await tryDegradeAlert(deps, "Die Recherche", err);
   }
 
-  const tickers = [
-    ...new Set([
-      ...(dossier?.candidates.map((c) => c.ticker) ?? []),
-      ...portfolio.positions.map((p) => p.ticker),
-      ...portfolio.orders.map((o) => o.ticker),
-    ]),
-  ];
-  const quotes = await deps.fetchQuotes(tickers); // throws → caller alerts
+  // Candidates are resolved fresh to their EUR venue; held names are priced on
+  // the venue they were entered on (stored deSymbol). Mr Ape then sees EUR prices
+  // + clear names and sets EUR levels.
+  const candidateTickers = [...new Set(dossier?.candidates.map((c) => c.ticker) ?? [])];
+  const heldHoldings = toHoldings([...portfolio.positions, ...portfolio.orders]);
+  const { quotes, listings } = await deps.fetchQuotes(candidateTickers, heldHoldings); // throws → caller alerts
 
   // Advocatus Diaboli: bull/bear per candidate (TradingAgents pattern). A
   // failed debate degrades to a debate-free decision; no dossier → no debate.
@@ -224,7 +227,11 @@ export async function runKuer(opts: KuerOptions, deps: KuerDeps): Promise<void> 
     return;
   }
 
-  const { portfolio: updated, accepted, rejected } = placeOrders(portfolio, decision.trades, quotes, {
+  // Enrich each decision with its resolved EUR listing (deSymbol/isin/name/currency)
+  // so the order → position → trade carry the venue + clear name (ADR 0005). A
+  // ticker with no EUR listing stays bare and is rejected by placeOrders (no quote).
+  const enriched = decision.trades.map((t) => enrichWithListing(t, listings));
+  const { portfolio: updated, accepted, rejected } = placeOrders(portfolio, enriched, quotes, {
     now: now.toISOString(),
     day,
   });

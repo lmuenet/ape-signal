@@ -34,7 +34,7 @@ function makeDeps(p: Portfolio, quotes: QuoteMap, over: Partial<KuerDeps> = {}) 
     savePortfolio: (x) => saved.push(x),
     appendJournal: (t, b) => journal.push([t, b]),
     readJournalTail: () => "",
-    fetchQuotes: vi.fn(async () => quotes),
+    fetchQuotes: vi.fn(async () => ({ quotes, listings: new Map() })),
     researchRunner: vi.fn(async () => DOSSIER),
     debateRunner: vi.fn(async () => DEBATE),
     decideRunner: vi.fn(async () => DECISION),
@@ -52,6 +52,23 @@ function makeDeps(p: Portfolio, quotes: QuoteMap, over: Partial<KuerDeps> = {}) 
 const quotes: QuoteMap = { NVDA: { close: 100, changePct: 1, high: 101, low: 99 } };
 
 describe("runKuer", () => {
+  it("carries the resolved EUR listing from the Kür onto the placed order (ADR 0005)", async () => {
+    const listings = new Map([
+      ["NVDA", { usTicker: "NVDA", isin: "US67066G1040", name: "NVIDIA Corporation", deSymbol: "TRADEGATE:NVD", venue: "TRADEGATE", currency: "EUR", close: 100 }],
+    ]);
+    const { deps, saved } = makeDeps(freshPortfolio(1000), quotes, {
+      fetchQuotes: vi.fn(async () => ({ quotes, listings })),
+    });
+    await runKuer({ scanSummary: "NVDA: signal" }, deps);
+    expect(saved.at(-1)?.orders[0]).toMatchObject({
+      ticker: "NVDA",
+      deSymbol: "TRADEGATE:NVD",
+      isin: "US67066G1040",
+      name: "NVIDIA Corporation",
+      currency: "EUR",
+    });
+  });
+
   it("places the decided order, saves, journals and posts the Kür", async () => {
     const { deps, saved, journal, sent } = makeDeps(freshPortfolio(1000), quotes);
     await runKuer({ scanSummary: "NVDA: signal" }, deps);

@@ -26,7 +26,7 @@ function makeDeps(p: Portfolio, over: Partial<IntradayDeps> = {}) {
     savePortfolio: (x) => saved.push(x),
     appendJournal: (t, b) => journal.push([t, b]),
     readJournalTail: () => "",
-    fetchQuotes: vi.fn(async () => quotes),
+    fetchQuotes: vi.fn(async () => ({ quotes, listings: new Map() })),
     researchRunner: vi.fn(async () => DOSSIER),
     decideRunner: vi.fn(async () => LIMIT_DECISION),
     send: vi.fn(async (t: string) => {
@@ -58,6 +58,23 @@ describe("runIntradayOpportunity", () => {
     expect(saved.at(-1)?.orders[0].limitPrice).toBe(99);
     expect(sent.some((m) => m.includes("prüft Intraday-Chance AMD"))).toBe(true); // start-ping
     expect(sent.some((m) => m.includes("Intraday-Limit gesetzt"))).toBe(true); // result
+  });
+
+  it("carries the resolved EUR listing onto the intraday order (ADR 0005)", async () => {
+    const listings = new Map([
+      ["AMD", { usTicker: "AMD", isin: "US0079031078", name: "Advanced Micro Devices, Inc.", deSymbol: "TRADEGATE:AMD", venue: "TRADEGATE", currency: "EUR", close: 100 }],
+    ]);
+    const { deps, saved } = makeDeps(freshPortfolio(1000), {
+      fetchQuotes: vi.fn(async () => ({ quotes, listings })),
+    });
+    await runIntradayOpportunity(trigger, deps);
+    expect(saved.at(-1)?.orders[0]).toMatchObject({
+      ticker: "AMD",
+      deSymbol: "TRADEGATE:AMD",
+      isin: "US0079031078",
+      name: "Advanced Micro Devices, Inc.",
+      currency: "EUR",
+    });
   });
 
   it("ALWAYS posts an outcome when Opus declines (kein Trade)", async () => {

@@ -6,7 +6,8 @@ import { loadEnv } from "../config/env";
 import { createTelegramClient } from "../telegram/client";
 import { createNotifier, parseVerbosity } from "../telegram/notify";
 import { createClaudeRunner, resolveWatchdog } from "../claude/invoke";
-import { fetchTickQuotes } from "./quotes";
+import { fetchTickQuotesEur } from "./quotes";
+import { resolveAndFetchEur } from "./eurPricing";
 import { appendTickHistory } from "./tickHistory";
 import { appendJournal, berlinDay, berlinStamp, dataDir, loadPortfolio, readJournalTail, savePortfolio } from "./store";
 import { loadHealth, saveHealth } from "./health";
@@ -48,12 +49,14 @@ async function main(): Promise<void> {
   const isClose = LABEL.toLowerCase() === "close";
 
   // Deps shared by the monitor tick, the Setup-Radar and the intraday opener.
+  // fetchQuotes is NOT shared: each consumer prices EUR differently — the monitor
+  // tick prices held positions on their stored venue (fetchTickQuotesEur), while
+  // the radar/intraday resolve bare tickers first (resolveAndFetchEur). ADR 0005.
   const shared = {
     loadPortfolio: () => loadPortfolio(dir, START_BALANCE),
     savePortfolio: (p: Parameters<typeof savePortfolio>[1]) => savePortfolio(dir, p),
     appendJournal: (title: string, body: string) => appendJournal(dir, title, body),
     readJournalTail: () => readJournalTail(dir),
-    fetchQuotes: (tickers: string[]) => fetchTickQuotes(tickers, fetch),
     send: notify,
     berlinDay,
     berlinStamp,
@@ -64,6 +67,8 @@ async function main(): Promise<void> {
     { isClose },
     {
       ...shared,
+      // Held positions/orders carry their venue → price it directly (no re-resolve).
+      fetchQuotes: (holdings) => fetchTickQuotesEur(holdings, fetch),
       recordTick: (day, atIso, quotes) => appendTickHistory(dir, day, atIso, quotes),
       loadHealth: (day) => loadHealth(dir, day),
       saveHealth: (h) => saveHealth(dir, h),
@@ -79,6 +84,8 @@ async function main(): Promise<void> {
       ? (trigger: SetupTrigger) =>
           runIntradayOpportunity(trigger, {
             ...shared,
+            // Resolve the triggered ticker to its EUR venue, then price + enrich.
+            fetchQuotes: (tickers) => resolveAndFetchEur(tickers, fetch),
             researchRunner: createClaudeRunner({ model: "sonnet", allowedTools: ["WebSearch", "Skill"], label: "Intraday-Research", onSlow, ...watchdog }),
             decideRunner: createClaudeRunner({ model: "opus", label: "Intraday-Entscheidung", onSlow, ...watchdog }),
           })
@@ -88,6 +95,8 @@ async function main(): Promise<void> {
     try {
       await runSetupRadar({
         ...shared,
+        // Watchlist tickers are bare → resolve to EUR venue, quotes only.
+        fetchQuotes: (tickers) => resolveAndFetchEur(tickers, fetch).then((r) => r.quotes),
         loadWatchlist: () => loadWatchlist(dir),
         saveWatchlist: (s) => saveWatchlist(dir, s),
         intraday,

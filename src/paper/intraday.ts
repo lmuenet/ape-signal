@@ -9,6 +9,7 @@ import { intradayTradesPlacedToday, placeOrders, tradesPlacedToday } from "./eng
 import { renderPortfolio, renderQuotes, renderTrackRecord } from "./format";
 import { buildIntradayDossierPrompt, buildIntradayPrompt } from "./prompts";
 import { parseDecision, parseDossier, type Dossier } from "./decision";
+import { enrichWithListing, type EurPricing } from "./eurPricing";
 import { GUARDRAILS, type Portfolio, type QuoteMap, type SetupTrigger } from "./types";
 import type { Language } from "../core/language";
 import { ClaudeError } from "../claude/invoke";
@@ -19,7 +20,9 @@ export interface IntradayDeps {
   savePortfolio: (p: Portfolio) => void;
   appendJournal: (title: string, body: string) => void;
   readJournalTail: () => string;
-  fetchQuotes: (tickers: string[]) => Promise<QuoteMap>;
+  /** Resolve the triggered ticker to its EUR venue and price it; returns EUR quotes
+   *  + the resolved listing (to enrich the order). Throws → caller skips. */
+  fetchQuotes: (tickers: string[]) => Promise<EurPricing>;
   /** Sonnet with WebSearch — focused research on the triggered ticker. */
   researchRunner: (prompt: string) => Promise<string>;
   /** Opus — the decider for the mini-Kür. */
@@ -72,8 +75,9 @@ export async function runIntradayOpportunity(trigger: SetupTrigger, deps: Intrad
   }
 
   let quotes: QuoteMap;
+  let listings: EurPricing["listings"];
   try {
-    quotes = await deps.fetchQuotes([ticker]);
+    ({ quotes, listings } = await deps.fetchQuotes([ticker]));
   } catch (err) {
     console.error(`[intraday] quote fetch failed for ${ticker}: ${err instanceof Error ? err.message : String(err)}`);
     await deps.send(`⚠️ Mr Ape — Intraday ${ticker}: Kurse nicht verfügbar, übersprungen.`, "progress");
@@ -138,8 +142,10 @@ export async function runIntradayOpportunity(trigger: SetupTrigger, deps: Intrad
     return;
   }
 
+  // Enrich with the resolved EUR listing so the intraday order carries its venue + name.
+  const enriched = enrichWithListing({ ...trade, ticker }, listings);
   const { portfolio: updated, accepted, rejected } = placeOrders(
-    portfolio, [{ ...trade, ticker }], quotes, { now: now.toISOString(), day, source: "intraday" },
+    portfolio, [enriched], quotes, { now: now.toISOString(), day, source: "intraday" },
   );
   portfolio = updated;
   deps.savePortfolio(portfolio);
