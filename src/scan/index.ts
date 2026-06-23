@@ -1,5 +1,7 @@
 // src/scan/index.ts
 import { loadEnv, requireFinnhub, requireRedditApi } from "../config/env";
+import { marketForScanLabel, marketDisplay } from "../config/session";
+import { marketIsOpen } from "../config/marketCalendar";
 import { fetchApewisdomSnapshot, fetchNextEarnings, fetchTradingViewTrend } from "../core/ape-intel";
 import { createTelegramClient } from "../telegram/client";
 import { runScan, type ScanDeps } from "./pipeline";
@@ -35,6 +37,16 @@ async function main(): Promise<void> {
     botToken: env.telegramBotToken,
     chatId: env.telegramChatId,
   });
+
+  // Pre-session market run on a day that market is closed (holiday/weekend): skip
+  // the whole run (scan + Kür) with one note, so Claude is never asked to reason
+  // about a shut exchange. Non-market labels (PreOpen/Manual) are unaffected.
+  const market = marketForScanLabel(LABEL);
+  if (market && !marketIsOpen(market, new Date())) {
+    await telegram.sendMessage(`🦍 ${marketDisplay(market)} ist heute geschlossen (Feiertag/Wochenende) — Pre-Session-Lauf & Kür übersprungen.`);
+    console.log(`[scan] ${LABEL}: market ${market} closed today; skipping scan + Kür.`);
+    return;
+  }
 
   // Watchdog for every autonomous Claude call: a hard timeout (kill) plus an
   // interim "still working" Telegram ping, so a hanging or usage-limited backend
@@ -85,10 +97,11 @@ async function main(): Promise<void> {
   const challenge = await runScan({ label: LABEL, limit: LIMIT }, deps);
   console.log(`[scan] ${LABEL} report sent.`);
 
-  // Kandidatenkür: opt-in (ENABLE_PAPER_TRADING), only after the PreUS scan —
-  // fresh data, US open is 15 minutes away. Sonnet researches + debattiert,
-  // Opus decides.
-  if (env.paperTradingEnabled && LABEL === "PreUS") {
+  // Kandidatenkür: opt-in (ENABLE_PAPER_TRADING), once per active market's
+  // pre-session run (PreXetra / PreUS) — fresh data, the market opens shortly.
+  // Sonnet researches + debattiert, Opus decides. Holiday-closed markets were
+  // already skipped above.
+  if (env.paperTradingEnabled && market) {
     const dir = dataDir();
     const startBalance = Number(process.env.PAPER_START_BALANCE ?? "2000");
     const scanSummary = [

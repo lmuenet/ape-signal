@@ -2,7 +2,8 @@
 // Pure, dependency-injected checks + a thin entrypoint. No new runtime deps.
 import { readFileSync, existsSync } from "node:fs";
 import { loadEnv, truthy } from "./env";
-import { loadSession } from "./session";
+import { activeMarkets, loadSession } from "./session";
+import { marketIsOpen } from "./marketCalendar";
 import { postScan } from "../core/tvScanner";
 import { spawnClaudeRunner } from "../claude/invoke";
 
@@ -65,14 +66,19 @@ export function checkRequiredEnv(source: Record<string, string | undefined>): Ch
   }
 }
 
-/** Aktive Handelssession (A2): Fenster + Default-Tick-Intervall. Hard-fail bei Config-Fehler. */
-export function checkSession(source: Record<string, string | undefined>): CheckResult {
+/** Aktive Märkte (A2): pro Markt Fenster + Kür, kombiniertes Fenster, Tick-Default
+ *  und ein „heute geschlossen"-Hinweis. Hard-fail bei Config-Fehler. */
+export function checkSession(source: Record<string, string | undefined>, now: Date = new Date()): CheckResult {
   try {
+    const markets = activeMarkets(source);
     const s = loadSession(source);
+    const perMarket = markets.map((m) => `${m.display} ${m.open}–${m.close} (Kür ${m.kuerScan})`).join(" + ");
+    const closed = markets.filter((m) => !marketIsOpen(m.name, now)).map((m) => m.display);
+    const note = closed.length ? ` · heute geschlossen: ${closed.join(", ")}` : "";
     return {
       name: "Session",
       status: "ok",
-      detail: `${s.open}–${s.close}, Kür-Scan ${s.kuerScan}, Tick ${s.tickIntervalMin}min`,
+      detail: `${perMarket} · Fenster ${s.open}–${s.close} · Tick ${s.tickIntervalMin}min${note}`,
     };
   } catch (err) {
     return { name: "Session", status: "fail", detail: err instanceof Error ? err.message : String(err) };

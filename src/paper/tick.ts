@@ -13,7 +13,8 @@ import { runTick } from "./tickPipeline";
 import { runSetupRadar } from "./radar";
 import { runIntradayOpportunity } from "./intraday";
 import { loadWatchlist, saveWatchlist } from "./watchlist";
-import { loadSession } from "../config/session";
+import { activeMarkets, loadSession } from "../config/session";
+import { marketIsOpen } from "../config/marketCalendar";
 import { resolveTickInterval } from "./tickInterval";
 import type { SetupTrigger } from "./types";
 
@@ -24,6 +25,12 @@ async function main(): Promise<void> {
   const env = loadEnv();
   if (!env.paperTradingEnabled) {
     console.log("[tick] paper trading disabled (ENABLE_PAPER_TRADING); skipping.");
+    return;
+  }
+  // All active markets shut today (holiday/weekend)? Nothing to monitor — skip
+  // silently; the tick fires every minute, so a Telegram note would spam.
+  if (activeMarkets(process.env).every((m) => !marketIsOpen(m.name, new Date()))) {
+    console.log("[tick] all active markets closed today (holiday/weekend); skipping.");
     return;
   }
   const telegram = createTelegramClient({ botToken: env.telegramBotToken, chatId: env.telegramChatId });
