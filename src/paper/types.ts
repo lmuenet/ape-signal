@@ -4,6 +4,24 @@
 
 export type Side = "long" | "short";
 
+/**
+ * The German EUR listing a trade is priced/monitored on (ADR 0005, EUR-pricing).
+ * Resolved once at the Kür from the US ticker via ISIN (see core/listingMap.ts)
+ * and then carried through order → position → closed trade so the monitor tick
+ * prices the SAME venue the trade was entered on. All fields optional so legacy
+ * (USD) depots and tests stay valid; absent → priced off the US ticker as before.
+ */
+export interface ListingRef {
+  /** Venue-qualified TradingView symbol, e.g. "TRADEGATE:QCI". */
+  deSymbol?: string;
+  /** ISIN, the stable US↔DE bridge, e.g. "US7475251036". */
+  isin?: string;
+  /** Human-readable company name, e.g. "QUALCOMM Incorporated". */
+  name?: string;
+  /** Quote currency, e.g. "EUR". Absent → treat as the legacy USD basis. */
+  currency?: string;
+}
+
 /** One scanner snapshot for a ticker at a tick (day high/low, not window). */
 export interface TickQuote {
   close: number;
@@ -25,11 +43,11 @@ export type QuoteMap = Record<string, TickQuote>;
  * deducted from balance) while the order is open; it expires unfilled at the
  * Close tick of the day it was created.
  */
-export interface EntryOrder {
+export interface EntryOrder extends ListingRef {
   id: string;
   ticker: string;
   side: Side;
-  stake: number; // reserved margin (USD)
+  stake: number; // reserved margin (depot currency)
   leverage: number; // 1..3 (balanced guardrail)
   entryType: "market" | "limit";
   limitPrice?: number; // fill when the price provably touches this level
@@ -57,7 +75,7 @@ export interface EntryOrder {
 }
 
 /** An open CFD-style position: notional = stake × leverage. */
-export interface Position {
+export interface Position extends ListingRef {
   id: string;
   ticker: string;
   side: Side;
@@ -83,7 +101,7 @@ export type TradeSource = "kuer" | "intraday";
 
 export type CloseReason = "stop" | "take-profit" | "liquidation" | "manual" | "expired";
 
-export interface ClosedTrade {
+export interface ClosedTrade extends ListingRef {
   id: string;
   ticker: string;
   side: Side;
@@ -186,8 +204,10 @@ export const WAKE = {
   cooldownMinutes: 15,
 } as const;
 
-/** A trade Mr Ape (Opus) wants to place at the Kandidatenkür. */
-export interface TradeDecision {
+/** A trade Mr Ape (Opus) wants to place at the Kandidatenkür. The ListingRef
+ *  fields are NOT chosen by Mr Ape — the Kür orchestration enriches each decision
+ *  with its resolved German EUR listing before placeOrders (see scan/index.ts). */
+export interface TradeDecision extends ListingRef {
   ticker: string;
   side: Side;
   stake: number;

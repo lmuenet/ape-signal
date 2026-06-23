@@ -586,3 +586,38 @@ describe("expireDayOrders (stale-close path, Lebenszeichen spec)", () => {
     expect(events).toEqual([]);
   });
 });
+
+describe("EUR listing carry-through (ADR 0005)", () => {
+  const LISTING = {
+    deSymbol: "TRADEGATE:QCI",
+    isin: "US7475251036",
+    name: "QUALCOMM Incorporated",
+    currency: "EUR",
+  };
+
+  it("placeOrders copies the resolved listing from the decision onto the order", () => {
+    const p = freshPortfolio(2000);
+    const { accepted } = placeOrders(
+      p,
+      [{ ticker: "QCOM", side: "long", stake: 200, leverage: 2, entry: 180, stopLoss: 170, thesis: "t", ...LISTING }],
+      { QCOM: q(180, 182, 178) },
+      { now: NOW, day: DAY },
+    );
+    expect(accepted[0]).toMatchObject(LISTING);
+  });
+
+  it("applyTick carries the listing from a filled order onto the position", () => {
+    const p: Portfolio = { ...freshPortfolio(1800), orders: [order({ ...LISTING, ticker: "QCOM", limitPrice: 180, stopLoss: 170, takeProfit: 200 })] };
+    const { events } = applyTick(p, { QCOM: q(180, 182, 178) }, { now: NOW, day: DAY, isClose: false });
+    const filled = events.find((e) => e.kind === "entry-filled");
+    expect(filled?.kind === "entry-filled" && filled.position).toMatchObject(LISTING);
+  });
+
+  it("closeTrade carries the listing into history (clear name + currency)", () => {
+    const base = freshPortfolio(0);
+    const p = withLastTick({ ...base, positions: [position({ ...LISTING, ticker: "QCOM", entryPrice: 180, units: 6, stopLoss: 170 })] }, { QCOM: q(185, 186, 184) });
+    // Next tick gaps below the stop → position closes, trade enters history.
+    const { portfolio } = applyTick(p, { QCOM: q(168, 169, 167) }, { now: NOW, day: DAY, isClose: false });
+    expect(portfolio.history[0]).toMatchObject(LISTING);
+  });
+});

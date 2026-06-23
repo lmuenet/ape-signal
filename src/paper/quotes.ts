@@ -1,8 +1,21 @@
 // src/paper/quotes.ts — tick quotes (close + day high/low) for the fill
 // engine, via the TradingView scanner (the only price source reachable from
 // the VPS — see docs/adr/0001).
+//
+// Two fetchers: the legacy fetchTickQuotes (US tickers, america, USD) and
+// fetchTickQuotesEur (German EUR venues, by ISIN, keyed back to the bot's
+// ticker). The EUR fetcher exists to fix the stale-US-data trap — see
+// docs/superpowers/specs/2026-06-23-eur-pricing-* and ADR 0005.
 import { postScan, num, type FetchFn } from "../core/tvScanner";
 import type { QuoteMap, TickQuote } from "./types";
+
+/** A held instrument the monitor tick must price: its ticker plus, for the EUR
+ *  path, the German venue (deSymbol) it was entered on and its ISIN. */
+export interface QuoteHolding {
+  ticker: string;
+  deSymbol?: string;
+  isin?: string;
+}
 
 /** Number-or-undefined: missing/non-numeric indicator cells stay absent (NOT 0 — a 0 EMA would be a false signal). */
 const optNum = (v: unknown): number | undefined =>
@@ -31,16 +44,63 @@ export async function fetchTickQuotes(tickers: string[], fetchFn: FetchFn = fetc
     const name = typeof d[0] === "string" ? d[0].toUpperCase() : null;
     const close = typeof d[1] === "number" ? d[1] : null;
     if (name === null || close === null || out[name]) continue; // first listing wins
-    const q: TickQuote = { close, changePct: num(d[2]), high: num(d[3]), low: num(d[4]) };
-    const ema10 = optNum(d[5]);
-    const ema20 = optNum(d[6]);
-    const ema50 = optNum(d[7]);
-    const rsi = optNum(d[8]);
-    if (ema10 !== undefined) q.ema10 = ema10;
-    if (ema20 !== undefined) q.ema20 = ema20;
-    if (ema50 !== undefined) q.ema50 = ema50;
-    if (rsi !== undefined) q.rsi = rsi;
-    out[name] = q;
+    out[name] = toQuote(d, 1);
+  }
+  return out;
+}
+
+/** Build a TickQuote from a scanner row, given the column offset of `close`.
+ *  Layout from `close`: close, change, high, low, EMA10, EMA20, EMA50, RSI. */
+function toQuote(d: unknown[], closeAt: number): TickQuote {
+  const q: TickQuote = {
+    close: num(d[closeAt]),
+    changePct: num(d[closeAt + 1]),
+    high: num(d[closeAt + 2]),
+    low: num(d[closeAt + 3]),
+  };
+  const ema10 = optNum(d[closeAt + 4]);
+  const ema20 = optNum(d[closeAt + 5]);
+  const ema50 = optNum(d[closeAt + 6]);
+  const rsi = optNum(d[closeAt + 7]);
+  if (ema10 !== undefined) q.ema10 = ema10;
+  if (ema20 !== undefined) q.ema20 = ema20;
+  if (ema50 !== undefined) q.ema50 = ema50;
+  if (rsi !== undefined) q.rsi = rsi;
+  return q;
+}
+
+/**
+ * EUR tick quotes for held instruments, from their German venues. One scanner
+ * POST filtered by ISIN (the proven server-side filter), then each holding is
+ * matched to the EXACT venue (deSymbol) it was entered on — so the monitor
+ * always prices the same venue the fill happened on, and the returned map is
+ * keyed by the bot's ticker (drop-in for the engine, which looks up by ticker).
+ *
+ * Holdings without an ISIN+deSymbol are skipped (no EUR listing → untouched,
+ * the same safe degradation as an unrecognised symbol). Throws on a non-ok HTTP
+ * status so the caller can skip the tick.
+ */
+export async function fetchTickQuotesEur(holdings: QuoteHolding[], fetchFn: FetchFn = fetch): Promise<QuoteMap> {
+  const out: QuoteMap = {};
+  const isins = [...new Set(holdings.map((h) => h.isin).filter((x): x is string => !!x))];
+  if (isins.length === 0) return out;
+  const body = {
+    filter: [{ left: "isin", operation: "in_range", right: isins }],
+    columns: ["close", "change", "high", "low", "EMA10", "EMA20", "EMA50", "RSI"],
+    range: [0, Math.max(isins.length * 12, 60)], // several venues per ISIN
+  };
+  const json = await postScan(fetchFn, body, "germany");
+  // Index every returned venue row by its venue-qualified symbol (row.s).
+  const bySymbol = new Map<string, TickQuote>();
+  for (const row of json.data ?? []) {
+    if (!Array.isArray(row.d) || typeof row.s !== "string") continue;
+    bySymbol.set(row.s, toQuote(row.d, 0));
+  }
+  // Price each holding on its exact entry venue; key the result by its ticker.
+  for (const h of holdings) {
+    if (!h.deSymbol) continue;
+    const q = bySymbol.get(h.deSymbol);
+    if (q) out[h.ticker] = q;
   }
   return out;
 }
