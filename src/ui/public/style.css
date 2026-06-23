@@ -22,6 +22,14 @@ main { max-width: 1100px; margin: 0 auto; padding: 16px 24px 64px; }
 #kuer details { margin-top: 12px; color: var(--dim); }
 #kuer details summary { cursor: pointer; }
 
+/* Gesamttabelle: Performance pro Handelstag (prominent oben) */
+table.perf { width: 100%; border-collapse: collapse; font-size: 14px; }
+table.perf th, table.perf td { padding: 7px 12px; text-align: right; border-bottom: 1px solid var(--line); white-space: nowrap; }
+table.perf th { color: var(--dim); font-weight: 600; text-transform: uppercase; letter-spacing: .04em; font-size: 12px; }
+table.perf th:first-child, table.perf td:first-child { text-align: left; }
+table.perf tbody tr:hover { background: var(--card); }
+table.perf td { font-variant-numeric: tabular-nums; }
+
 /* Kennzahlen-Legende über dem Positions-Chart (C1) */
 .legend { display: flex; flex-wrap: wrap; gap: 4px 16px; margin: 6px 0; padding-bottom: 6px; border-bottom: 1px solid var(--line); font-size: 12px; line-height: 1.5; }
 .leg-cell { white-space: nowrap; }

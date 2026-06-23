@@ -11,7 +11,7 @@ import { equity } from "../paper/engine";
 import { loadPortfolio } from "../paper/store";
 import { readTickSeries } from "../paper/tickHistory";
 import { listKuerDays, loadKuerArtifact } from "../paper/kuerArtifact";
-import { equitySeries } from "./series";
+import { dailyPerformance, equitySeries } from "./series";
 
 export interface UiServerOptions {
   dir: string; // DATA_DIR
@@ -98,6 +98,11 @@ export function createUiServer(opts: UiServerOptions): Server {
       if (path === "/api/equity") {
         const portfolio = loadPortfolio(opts.dir, opts.startBalance);
         sendJson(res, equitySeries(portfolio, opts.startBalance));
+        return;
+      }
+      if (path === "/api/daily") {
+        const portfolio = loadPortfolio(opts.dir, opts.startBalance);
+        sendJson(res, dailyPerformance(portfolio, opts.startBalance));
         return;
       }
       if (path === "/api/kuer/days") {

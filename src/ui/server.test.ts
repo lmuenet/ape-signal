@@ -104,6 +104,14 @@ describe("ui server", () => {
     expect(index.headers.get("content-type")).toContain("text/html");
   });
 
+  it("serves the daily performance series as a JSON array", async () => {
+    fixture();
+    const base = await start();
+    const res = await fetch(`${base}/api/daily`, { headers: AUTH });
+    expect(res.status).toBe(200);
+    expect(Array.isArray(await res.json())).toBe(true); // empty here: the fixture has no closed history
+  });
+
   it("serves the legend module as javascript", async () => {
     fixture();
     const base = await start();
