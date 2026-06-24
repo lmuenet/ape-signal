@@ -2,6 +2,7 @@
 // /vendor/lightweight-charts.js (v4 standalone build).
 import { buildLegend } from "./legend.js";
 import { TV_EMBED_SRC, tvWidgetConfig } from "./liveChart.js";
+import { berlinChartTime } from "./time.js";
 
 const $ = (sel) => document.querySelector(sel);
 // Money with the instrument/depot currency symbol — default EUR (the depot is
@@ -11,7 +12,9 @@ const money = (n, ccy = "EUR") => `${n < 0 ? "-" : ""}${CCY_SYMBOL[ccy] ?? "€"
 const signedMoney = (n, ccy = "EUR") => `${n >= 0 ? "+" : "-"}${CCY_SYMBOL[ccy] ?? "€"}${Math.abs(n).toFixed(2)}`;
 const signedPct = (n) => `${n >= 0 ? "+" : ""}${n.toFixed(1)}%`;
 const tone = (n) => (n >= 0 ? "pnl-pos" : "pnl-neg");
-const ts = (iso) => Math.floor(Date.parse(iso) / 1000);
+// Charts render in Europe/Berlin wall-clock: LightweightCharts shows numeric
+// (UTC) timestamps as-is, so we shift each point by the Berlin offset (time.js).
+const ts = berlinChartTime;
 
 const CHART_OPTS = {
   layout: { background: { color: "transparent" }, textColor: "#8b96a8" },
@@ -208,7 +211,7 @@ async function load() {
   $("#headline").innerHTML =
     `Equity <b>${money(state.equity)}</b> · frei <b>${money(portfolio.balance)}</b>` +
     ` · ${portfolio.positions.length} Positionen, ${portfolio.orders.length} Orders` +
-    (state.generatedAt ? ` · Stand ${new Date(state.generatedAt).toLocaleString("de-DE")}` : "");
+    (state.generatedAt ? ` · Stand ${new Date(state.generatedAt).toLocaleString("de-DE", { timeZone: "Europe/Berlin" })}` : "");
 
   renderPerformance(await api("/api/daily"));
 
