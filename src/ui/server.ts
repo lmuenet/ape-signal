@@ -28,6 +28,7 @@ const STATIC: Record<string, { file: string; type: string }> = {
   "/app.js": { file: join(PUBLIC_DIR, "app.js"), type: "text/javascript; charset=utf-8" },
   "/legend.js": { file: join(PUBLIC_DIR, "legend.js"), type: "text/javascript; charset=utf-8" },
   "/liveChart.js": { file: join(PUBLIC_DIR, "liveChart.js"), type: "text/javascript; charset=utf-8" },
+  "/time.js": { file: join(PUBLIC_DIR, "time.js"), type: "text/javascript; charset=utf-8" },
   "/style.css": { file: join(PUBLIC_DIR, "style.css"), type: "text/css; charset=utf-8" },
   "/vendor/lightweight-charts.js": {
     // The package's "exports" hides dist/, so resolve the entry and go from there.
