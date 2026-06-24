@@ -59,8 +59,8 @@ export async function runJournalCommand(text: string | undefined, deps: JournalD
   deps.appendJournal("Verwaltung", note);
 
   if (parsed.action.action === "note") {
-    return `📝 Notiert. (Guthaben unverändert: $${updated.balance.toFixed(2)})`;
+    return `📝 Notiert. (Guthaben unverändert: €${updated.balance.toFixed(2)})`;
   }
   const verb = { set_balance: "gesetzt", deposit: "eingezahlt", withdraw: "entnommen" }[parsed.action.action];
-  return `✅ ${verb}: $${parsed.action.amount.toFixed(2)} — freies Guthaben jetzt $${updated.balance.toFixed(2)}.`;
+  return `✅ ${verb}: €${parsed.action.amount.toFixed(2)} — freies Guthaben jetzt €${updated.balance.toFixed(2)}.`;
 }

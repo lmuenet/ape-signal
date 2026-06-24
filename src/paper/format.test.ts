@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { describeAdjustment, formatDailySummary, formatDecisionMirror, formatManagerNote, renderPortfolio, renderTrackRecord } from "./format";
+import { describeAdjustment, formatDailySummary, formatDecisionMirror, formatEvent, formatManagerNote, orderLine, renderPortfolio, renderTrackRecord } from "./format";
 import type { Adjustment, ClosedTrade, EntryOrder, Portfolio, Position, QuoteMap, TickEvent } from "./types";
 import type { Debate, Dossier } from "./decision";
 
@@ -80,6 +80,37 @@ describe("renderPortfolio", () => {
     const out = renderPortfolio({ balance: 800, positions: [], orders: [order], history: [] }, {});
     expect(out).toContain("gültig bis Handelsschluss 2026-06-13");
     expect(out).toContain("Leiter-Rung");
+  });
+});
+
+describe("EUR-Anzeige (ADR 0005): Klarname + Waehrungssymbol", () => {
+  const eurPos: Position = { ...pos, ticker: "QCOM", name: "QUALCOMM Incorporated", currency: "EUR", deSymbol: "TRADEGATE:QCI" };
+  const eurQuotes: QuoteMap = { QCOM: { close: 175, changePct: -1, high: 190, low: 174 } };
+
+  it("zeigt den Klarnamen und € auf der Positionszeile", () => {
+    const out = renderPortfolio({ balance: 800, positions: [eurPos], orders: [], history: [] }, eurQuotes);
+    expect(out).toContain("QUALCOMM Incorporated (QCOM)");
+    expect(out).toContain("Einsatz €200.00");
+    expect(out).not.toContain("$");
+  });
+
+  it("nutzt € fuer Guthaben/Equity per Default (EUR-Depot)", () => {
+    const out = renderPortfolio({ balance: 800, positions: [], orders: [], history: [] }, {});
+    expect(out).toContain("Guthaben (frei): €800.00");
+  });
+
+  it("zeigt Klarname + € im entry-filled-Event", () => {
+    const line = formatEvent({ kind: "entry-filled", position: eurPos } as TickEvent);
+    expect(line).toContain("QUALCOMM Incorporated (QCOM)");
+    expect(line).toContain("Einsatz €200.00");
+  });
+
+  it("faellt auf den Ticker zurueck, wenn kein Klarname gesetzt ist", () => {
+    const out = orderLine({
+      id: "X-1", ticker: "AMD", side: "long", stake: 100, leverage: 1,
+      entryType: "market", stopLoss: 90, thesis: "", createdAt: "2026-06-11T13:00:00.000Z", day: "2026-06-11",
+    });
+    expect(out).toContain("AMD long"); // Ticker-only Label (kein "Name (AMD)")
   });
 });
 

@@ -5,8 +5,17 @@ import { formatTech } from "./trend";
 import type { Adjustment, ClosedTrade, EntryOrder, Portfolio, Position, QuoteMap, TickEvent } from "./types";
 import type { Debate, Dossier } from "./decision";
 
-const usd = (n: number) => `${n >= 0 ? "" : "-"}$${Math.abs(n).toFixed(2)}`;
+// Money with the instrument/depot currency symbol. Default EUR — the depot is
+// EUR-denominated after the German-pricing migration (ADR 0005); legacy USD
+// positions still render with "$" via their stored currency.
+const CCY_SYMBOL: Record<string, string> = { EUR: "€", USD: "$" };
+export const money = (n: number, currency = "EUR") =>
+  `${n >= 0 ? "" : "-"}${CCY_SYMBOL[currency] ?? "€"}${Math.abs(n).toFixed(2)}`;
 const sign = (n: number) => `${n >= 0 ? "+" : ""}${n.toFixed(2)}`;
+
+/** "Klarname (TICKER)" when a clear name is known (ADR 0005), else just the ticker. */
+export const label = (x: { ticker: string; name?: string }) =>
+  x.name && x.name.trim() !== "" ? `${x.name} (${x.ticker})` : x.ticker;
 
 /** Human label per close reason (shared by event lines and the track-record). */
 export const closeReasonLabel: Record<ClosedTrade["reason"], string> = {
@@ -19,14 +28,14 @@ export const closeReasonLabel: Record<ClosedTrade["reason"], string> = {
 function positionLine(pos: Position, quotes: QuoteMap): string {
   const q = quotes[pos.ticker];
   const pnl = q ? positionPnl(pos, q.close) : null;
-  const pnlText = pnl === null ? "Kurs fehlt" : `P&L ${usd(pnl)} (${sign((pnl / pos.stake) * 100)}%)`;
+  const pnlText = pnl === null ? "Kurs fehlt" : `P&L ${money(pnl, pos.currency)} (${sign((pnl / pos.stake) * 100)}%)`;
   const tp = pos.takeProfit !== undefined ? `, TP ${pos.takeProfit}` : "";
   const wake =
     pos.wakeAbove !== undefined || pos.wakeBelow !== undefined
       ? `, Wake ${pos.wakeBelow ?? "—"}/${pos.wakeAbove ?? "—"}`
       : "";
   return (
-    `[${pos.id}] ${pos.ticker} ${pos.side} ${pos.leverage}x, Einsatz ${usd(pos.stake)}, ` +
+    `[${pos.id}] ${label(pos)} ${pos.side} ${pos.leverage}x, Einsatz ${money(pos.stake, pos.currency)}, ` +
     `Entry ${pos.entryPrice}${q ? `, Kurs ${q.close}` : ""}, SL ${pos.stopLoss}${tp}${wake}, ` +
     `Liq ${liquidationPrice(pos).toFixed(2)} — ${pnlText}`
   );
@@ -37,14 +46,14 @@ export function orderLine(o: EntryOrder): string {
   const entry = o.entryType === "market" ? "Market" : `Limit ${o.limitPrice}`;
   const tp = o.takeProfit !== undefined ? `, TP ${o.takeProfit}` : "";
   const rung = o.rungGroup !== undefined ? ", Leiter-Rung" : "";
-  return `[${o.id}] ${o.ticker} ${o.side} ${o.leverage}x, Einsatz ${usd(o.stake)}, ${entry}, SL ${o.stopLoss}${tp}${rung} (gültig bis Handelsschluss ${o.expiresOn ?? o.day})`;
+  return `[${o.id}] ${label(o)} ${o.side} ${o.leverage}x, Einsatz ${money(o.stake, o.currency)}, ${entry}, SL ${o.stopLoss}${tp}${rung} (gültig bis Handelsschluss ${o.expiresOn ?? o.day})`;
 }
 
 /** Compact depot block — used in prompts and the /journal status message. */
 export function renderPortfolio(p: Portfolio, quotes: QuoteMap): string {
   const lines = [
-    `Guthaben (frei): ${usd(p.balance)}`,
-    `Equity (gesamt): ${usd(equity(p, quotes))}`,
+    `Guthaben (frei): ${money(p.balance)}`,
+    `Equity (gesamt): ${money(equity(p, quotes))}`,
   ];
   lines.push("", p.positions.length > 0 ? "Offene Positionen:" : "Offene Positionen: keine");
   for (const pos of p.positions) lines.push("  " + positionLine(pos, quotes));
@@ -70,14 +79,14 @@ export function formatEvent(e: TickEvent): string {
   if (e.kind === "entry-filled") {
     const p = e.position;
     const tp = p.takeProfit !== undefined ? `, TP ${p.takeProfit}` : "";
-    return `🟢 Eröffnet: ${p.ticker} ${p.side} ${p.leverage}x @ ${p.entryPrice} — Einsatz ${usd(p.stake)}, SL ${p.stopLoss}${tp}`;
+    return `🟢 Eröffnet: ${label(p)} ${p.side} ${p.leverage}x @ ${p.entryPrice} — Einsatz ${money(p.stake, p.currency)}, SL ${p.stopLoss}${tp}`;
   }
   if (e.kind === "order-expired") {
-    return `⏳ Order verfallen: ${e.order.ticker} ${e.order.side} (${e.order.entryType === "limit" ? `Limit ${e.order.limitPrice}` : "Market"}) — Einsatz ${usd(e.order.stake)} zurück`;
+    return `⏳ Order verfallen: ${label(e.order)} ${e.order.side} (${e.order.entryType === "limit" ? `Limit ${e.order.limitPrice}` : "Market"}) — Einsatz ${money(e.order.stake, e.order.currency)} zurück`;
   }
   const t = e.trade;
   const emoji = t.pnl >= 0 ? "✅" : t.reason === "liquidation" ? "💀" : "🔴";
-  return `${emoji} ${closeReasonLabel[t.reason]}: ${t.ticker} ${t.side} @ ${t.exitPrice} — P&L ${usd(t.pnl)} (${sign((t.pnl / t.stake) * 100)}%)`;
+  return `${emoji} ${closeReasonLabel[t.reason]}: ${label(t)} ${t.side} @ ${t.exitPrice} — P&L ${money(t.pnl, t.currency)} (${sign((t.pnl / t.stake) * 100)}%)`;
 }
 
 /** The Kandidatenkür Telegram post. */
@@ -164,8 +173,8 @@ export function formatDailySummary(
   const lines = [
     `🦍 Mr Ape — Tagesabschluss ${day}`,
     "",
-    `Equity: ${usd(equity(p, quotes))} · Guthaben frei: ${usd(p.balance)}${stale}`,
-    `Heute realisiert: ${usd(dayPnl)} (${todayTrades.length} Trade${todayTrades.length === 1 ? "" : "s"})`,
+    `Equity: ${money(equity(p, quotes))} · Guthaben frei: ${money(p.balance)}${stale}`,
+    `Heute realisiert: ${money(dayPnl)} (${todayTrades.length} Trade${todayTrades.length === 1 ? "" : "s"})`,
     "",
     renderPortfolio(p, quotes).split("\n").slice(2).join("\n"),
   ];
@@ -201,7 +210,7 @@ export function renderTrackRecord(history: ClosedTrade[], limit: number): string
     const hold = days < 1 ? "<1 Tag" : `${Math.round(days)} Tag${Math.round(days) === 1 ? "" : "e"}`;
     const pnlPct = sign((t.pnl / t.stake) * 100);
     const thesis = t.thesis?.trim() ? `These „${t.thesis.trim()}"` : "ohne These";
-    lines.push(`${t.ticker} ${t.side}, ${thesis} → ${closeReasonLabel[t.reason]}, P&L ${pnlPct}% (${hold})`);
+    lines.push(`${label(t)} ${t.side}, ${thesis} → ${closeReasonLabel[t.reason]}, P&L ${pnlPct}% (${hold})`);
   }
   return lines.join("\n");
 }
