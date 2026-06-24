@@ -130,6 +130,15 @@ describe("ui server", () => {
     expect(await res.text()).toContain("tvWidgetConfig");
   });
 
+  it("serves the time module as javascript (app.js imports it)", async () => {
+    fixture();
+    const base = await start();
+    const res = await fetch(`${base}/time.js`, { headers: AUTH });
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toContain("javascript");
+    expect(await res.text()).toContain("berlinChartTime");
+  });
+
   it("404s unknown paths and blocks path traversal", async () => {
     fixture();
     const base = await start();
