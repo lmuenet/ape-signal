@@ -229,8 +229,13 @@ async function load() {
   for (const o of portfolio.orders) {
     const el = document.createElement("div");
     el.className = "card";
-    el.innerHTML = `<b>${nameLabel(o)}</b> ${o.side} ${o.leverage}x — ${o.entryType === "market" ? "Market" : `Limit ${o.limitPrice}`},
-      SL ${o.stopLoss}${o.takeProfit ? `, TP ${o.takeProfit}` : ""} <div class="meta">${esc(o.thesis)}</div>`;
+    // Mirror the Telegram orderLine (format.ts): stake, type, stop, ladder rung
+    // and TTL validity — the UI must not show less than the chat.
+    el.innerHTML = `<b>${nameLabel(o)}</b> ${o.side} ${o.leverage}x — Einsatz ${money(o.stake, o.currency)},
+      ${o.entryType === "market" ? "Market" : `Limit ${o.limitPrice}`},
+      SL ${o.stopLoss}${o.takeProfit ? `, TP ${o.takeProfit}` : ""}${o.rungGroup !== undefined ? ", Leiter-Rung" : ""}
+      <div class="meta">gültig bis Handelsschluss ${esc(o.expiresOn ?? o.day)}</div>
+      <div class="meta">${esc(o.thesis)}</div>`;
     orderRoot.appendChild(el);
   }
 
