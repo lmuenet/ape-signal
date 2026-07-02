@@ -112,6 +112,18 @@ function renderTrendBlock(rows: TrendingRow[], trend: Map<string, TrendQuote>): 
   ].join("\n");
 }
 
+/** A mechanical screener hit (Momentum/Ready-to-Trend) — seeds the Setup-Radar
+ *  watchlist beyond the dossier leftovers (Masterplan-Beschluss 2026-06-18). */
+export interface ScreenerCandidate {
+  ticker: string;
+  note: string;
+}
+
+export interface ScanResult {
+  challenge: TrendingChallenge;
+  screenerCandidates: ScreenerCandidate[];
+}
+
 /**
  * One scan run: fetch Apewisdom trending → (optionally) crawl reddit for
  * off-radar candidates → challenge the COMBINED list via one Claude call →
@@ -123,7 +135,7 @@ function renderTrendBlock(rows: TrendingRow[], trend: Map<string, TrendQuote>): 
 export async function runScan(
   options: ScanOptions,
   deps: ScanDeps,
-): Promise<TrendingChallenge> {
+): Promise<ScanResult> {
   const snapshot = await deps.fetchSnapshot();
   const rows = snapshotToRows(snapshot, options.limit);
   const knownTickers = new Set(snapshot.keys());
@@ -191,5 +203,16 @@ export async function runScan(
   });
   await deps.send(report, options.reportCategory ?? "trade");
 
-  return challenge;
+  // Screener hits for the Setup-Radar watchlist (momentum first — the fresher
+  // push), long AND short; the Kür dedupes against dossier entries and caps.
+  const screenerCandidates: ScreenerCandidate[] = [];
+  const addCandidates = (rs: RsResult | null, label: string): void => {
+    if (!rs) return;
+    for (const c of rs.longs) screenerCandidates.push({ ticker: c.ticker, note: `${label} (long)` });
+    for (const c of rs.shorts) screenerCandidates.push({ ticker: c.ticker, note: `${label} (short)` });
+  };
+  addCandidates(momentum, "Momentum-Screener");
+  addCandidates(ready, "Ready-to-Trend-Screener");
+
+  return { challenge, screenerCandidates };
 }

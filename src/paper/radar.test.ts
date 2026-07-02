@@ -14,7 +14,8 @@ const watchlist = (over: Partial<WatchlistState> = {}): WatchlistState => ({
   lastQuotes: { AMD: tq({ ema10: 99, ema20: 100 }) },
   ...over,
 });
-const nowQuotes: QuoteMap = { AMD: tq({ close: 105, ema10: 101, ema20: 100 }) };
+// low above the EMA20 so only the cross fires (no pullback-touch side trigger)
+const nowQuotes: QuoteMap = { AMD: tq({ close: 105, high: 106, low: 101, ema10: 101, ema20: 100 }) };
 
 function makeDeps(over: Partial<RadarDeps> = {}, p: Portfolio = freshPortfolio(1000)) {
   const saved: WatchlistState[] = [];

@@ -101,7 +101,7 @@ async function main(): Promise<void> {
 
   // The autonomous pre-session report is muted as "research"; an explicit manual
   // run (scan@Manual) keeps it as "trade".
-  const challenge = await runScan(
+  const { challenge, screenerCandidates } = await runScan(
     { label: LABEL, limit: LIMIT, reportCategory: LABEL.toLowerCase() === "manual" ? "trade" : "research" },
     deps,
   );
@@ -122,8 +122,9 @@ async function main(): Promise<void> {
       .join("\n");
     await runKuer(
       // Market for the artifact key + Telegram label — in xetra+us mode two
-      // Kürs run per day and must not overwrite each other.
-      { scanSummary, market, marketLabel: marketDisplay(market) },
+      // Kürs run per day and must not overwrite each other. Screener hits widen
+      // the Setup-Radar watchlist beyond the dossier leftovers.
+      { scanSummary, market, marketLabel: marketDisplay(market), screenerCandidates },
       {
         loadPortfolio: () => loadPortfolio(dir, startBalance),
         savePortfolio: (p) => savePortfolio(dir, p),

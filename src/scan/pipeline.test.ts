@@ -32,7 +32,27 @@ describe("runScan", () => {
     // the sent message reflects the parsed verdict
     expect(send).toHaveBeenCalledTimes(1);
     expect(send.mock.calls[0][0]).toContain("✅ TSLA");
-    expect(result.verdicts).toHaveLength(1);
+    expect(result.challenge.verdicts).toHaveLength(1);
+    expect(result.screenerCandidates).toEqual([]); // no screener deps wired
+  });
+
+  it("returns screener hits (momentum + ready-to-trend, long and short) for the watchlist seed", async () => {
+    const rsHit = (ticker: string) => ({ ticker, close: 100, perfM: 10, rsM: 5, perfW: 2, changePct: 1 });
+    const result = await runScan(
+      { label: "Morning", limit: 10 },
+      {
+        fetchSnapshot: vi.fn(async () => fakeSnapshot()),
+        claudeRunner: vi.fn(async () => '{"summary":"","verdicts":[]}'),
+        send: vi.fn(async () => {}),
+        fetchMomentum: async () => ({ spyPerfM: 3, longs: [rsHit("PLTR")], shorts: [rsHit("INTC")] }),
+        fetchReadyToTrend: async () => ({ spyPerfM: 3, longs: [rsHit("NOW")], shorts: [] }),
+      },
+    );
+    expect(result.screenerCandidates).toEqual([
+      { ticker: "PLTR", note: "Momentum-Screener (long)" },
+      { ticker: "INTC", note: "Momentum-Screener (short)" },
+      { ticker: "NOW", note: "Ready-to-Trend-Screener (long)" },
+    ]);
   });
 
   it("appends the German + headless directives to the trending prompt", async () => {

@@ -52,7 +52,14 @@ export interface KuerOptions {
   marketLabel?: string;
   /** Market name ("xetra"/"us") — keys the Kür artifact so two Kürs per day coexist. */
   market?: string;
+  /** Mechanical screener hits (Momentum/Ready-to-Trend) that widen the Setup-Radar
+   *  watchlist beyond the dossier leftovers (Masterplan-Beschluss 2026-06-18). */
+  screenerCandidates?: Array<{ ticker: string; note: string }>;
 }
+
+/** Watchlist size cap — bounds the radar's per-tick quote load and alert volume.
+ *  Dossier leftovers seed first; screener hits fill the rest. */
+const WATCHLIST_CAP = 10;
 
 function renderDossier(dossier: Dossier | null): string {
   if (!dossier) return "(Research fehlgeschlagen — entscheide auf Basis von Scan-Daten und Kursen.)";
@@ -114,8 +121,9 @@ function trySaveKuer(deps: KuerDeps, artifact: KuerArtifact): void {
 }
 
 /**
- * Seed the intraday Setup-Radar watchlist (Stufe 2) from the dossier candidates
- * that were NOT turned into a trade today (and are not already held). Best-effort:
+ * Seed the intraday Setup-Radar watchlist (Stufe 2): dossier candidates that
+ * were NOT turned into a trade today first, then screener hits (Momentum/
+ * Ready-to-Trend), capped at WATCHLIST_CAP after the same-day merge. Best-effort:
  * a failure must never break the Kür.
  */
 function trySeedWatchlist(
@@ -123,14 +131,21 @@ function trySeedWatchlist(
   day: string,
   dossier: Dossier | null,
   tradedTickers: Set<string>,
+  screener: Array<{ ticker: string; note: string }> = [],
 ): void {
   if (!deps.saveWatchlist) return;
-  const entries: WatchlistEntry[] = (dossier?.candidates ?? [])
+  const entries: WatchlistEntry[] = [
+    ...(dossier?.candidates ?? []).map((c) => ({ ticker: c.ticker, note: c.angle || c.catalyst || "" })),
+    ...screener,
+  ]
     .filter((c) => !tradedTickers.has(c.ticker.toUpperCase()))
-    .map((c) => ({ ticker: c.ticker, note: c.angle || c.catalyst || "", addedDay: day, firedKinds: [] }));
+    .map((c) => ({ ticker: c.ticker, note: c.note, addedDay: day, firedKinds: [] }));
   try {
     const existing = deps.loadWatchlist ? deps.loadWatchlist() : null;
-    deps.saveWatchlist(mergeWatchlist(existing, day, entries));
+    const merged = mergeWatchlist(existing, day, entries);
+    // Cap AFTER the merge: existing entries sit first, so trimming drops only
+    // the newest additions — never a fired-trigger baseline.
+    deps.saveWatchlist({ ...merged, entries: merged.entries.slice(0, WATCHLIST_CAP) });
   } catch (err) {
     console.error(`[kuer] seeding watchlist failed: ${err instanceof Error ? err.message : String(err)}`);
   }
@@ -254,7 +269,7 @@ export async function runKuer(opts: KuerOptions, deps: KuerDeps): Promise<void> 
     ...accepted.map((o) => o.ticker),
     ...portfolio.positions.map((p) => p.ticker),
   ]);
-  trySeedWatchlist(deps, day, dossier, tradedTickers);
+  trySeedWatchlist(deps, day, dossier, tradedTickers, opts.screenerCandidates ?? []);
 
   trySaveKuer(deps, {
     day,

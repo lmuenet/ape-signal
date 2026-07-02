@@ -10,7 +10,8 @@ const entry = (over: Partial<WatchlistEntry> = {}): WatchlistEntry => ({
 describe("detectSetups — EMA cross", () => {
   it("fires ema-cross-up when EMA10 crosses above EMA20", () => {
     const prev: QuoteMap = { AAPL: tq({ ema10: 99, ema20: 100 }) };
-    const now: QuoteMap = { AAPL: tq({ close: 105, ema10: 101, ema20: 100 }) };
+    // low above the EMA20 so the pullback-touch trigger stays out of this test
+    const now: QuoteMap = { AAPL: tq({ close: 105, high: 106, low: 101, ema10: 101, ema20: 100 }) };
     const t = detectSetups([entry()], now, prev);
     expect(t).toHaveLength(1);
     expect(t[0]).toMatchObject({ ticker: "AAPL", kind: "ema-cross-up", price: 105 });
@@ -65,6 +66,47 @@ describe("detectSetups — gating", () => {
     const now: QuoteMap = { AAPL: tq({ ema10: 101, ema20: 100, rsi: 28 }) };
     const kinds = detectSetups([entry()], now, prev).map((t) => t.kind);
     expect(kinds).toEqual(["ema-cross-up", "rsi-oversold"]);
+  });
+});
+
+describe("detectSetups — Radar-Ausbau (Beschluss 2026-07-02)", () => {
+  it("fires ema20-pullback-long when the day low touches the EMA20 in an uptrend", () => {
+    const prev: QuoteMap = { AAPL: tq({ ema10: 103, ema20: 100 }) };
+    const now: QuoteMap = { AAPL: tq({ close: 102, high: 104, low: 99.5, ema10: 103, ema20: 100 }) };
+    const kinds = detectSetups([entry()], now, prev).map((t) => t.kind);
+    expect(kinds).toEqual(["ema20-pullback-long"]);
+  });
+
+  it("fires the short mirror when the day high touches the EMA20 in a downtrend", () => {
+    const prev: QuoteMap = { AAPL: tq({ ema10: 97, ema20: 100 }) };
+    const now: QuoteMap = { AAPL: tq({ close: 98, high: 100.5, low: 96, ema10: 97, ema20: 100 }) };
+    expect(detectSetups([entry()], now, prev)[0]?.kind).toBe("ema20-pullback-short");
+  });
+
+  it("fires ema50-reclaim / ema50-loss on a close crossing the EMA50", () => {
+    const prev: QuoteMap = { AAPL: tq({ close: 98, ema50: 100 }) };
+    const now: QuoteMap = { AAPL: tq({ close: 101, high: 102, low: 97, ema50: 100 }) };
+    expect(detectSetups([entry()], now, prev)[0]?.kind).toBe("ema50-reclaim");
+    const prevAbove: QuoteMap = { AAPL: tq({ close: 101, ema50: 100 }) };
+    const nowBelow: QuoteMap = { AAPL: tq({ close: 99, high: 102, low: 97, ema50: 100 }) };
+    expect(detectSetups([entry()], nowBelow, prevAbove)[0]?.kind).toBe("ema50-loss");
+  });
+
+  it("fires high52w-breakout only on a real crossing of the PREVIOUS snapshot's high", () => {
+    const prev: QuoteMap = { AAPL: tq({ close: 98, high52w: 100 }) };
+    const now: QuoteMap = { AAPL: tq({ close: 101, high: 102, low: 97, high52w: 101 }) };
+    expect(detectSetups([entry()], now, prev)[0]?.kind).toBe("high52w-breakout");
+    // already at the high before → no crossing, no signal
+    const atHigh: QuoteMap = { AAPL: tq({ close: 100, high52w: 100 }) };
+    expect(detectSetups([entry()], now, atHigh)).toHaveLength(0);
+  });
+
+  it("fires volume-spike when volume/avg10d crosses the factor upwards — never without data", () => {
+    const prev: QuoteMap = { AAPL: tq({ volume: 150, avgVolume10d: 100 }) };
+    const now: QuoteMap = { AAPL: tq({ volume: 250, avgVolume10d: 100 }) };
+    expect(detectSetups([entry()], now, prev)[0]?.kind).toBe("volume-spike");
+    expect(detectSetups([entry()], now, { AAPL: tq() })).toHaveLength(0); // no prev volume → silent
+    expect(detectSetups([entry()], now, prev, { ...OPPORTUNISM, volumeSpikeFactor: 3 })).toHaveLength(0);
   });
 });
 

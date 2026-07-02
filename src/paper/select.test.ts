@@ -323,6 +323,19 @@ describe("runKuer", () => {
     expect(watchSaves[0].entries[0].note).toContain("Pullback");
   });
 
+  it("appends screener candidates behind dossier leftovers, capped at 10", async () => {
+    const watchSaves: WatchlistState[] = [];
+    const screener = Array.from({ length: 12 }, (_, i) => ({ ticker: `S${i}`, note: "Momentum-Screener (long)" }));
+    const { deps } = makeDeps(freshPortfolio(1000), quotes, {
+      saveWatchlist: (s) => watchSaves.push(s),
+    });
+    await runKuer({ scanSummary: "", screenerCandidates: screener }, deps);
+    const tickers = watchSaves[0].entries.map((e) => e.ticker);
+    expect(tickers).toHaveLength(10); // cap
+    expect(tickers[0]).toBe("S0"); // dossier candidate NVDA was traded → screener fills
+    expect(watchSaves[0].entries[0].note).toContain("Momentum");
+  });
+
   it("the second Kür of the day MERGES the watchlist — firedKinds survive (Beschluss 2026-07-02)", async () => {
     const watchSaves: WatchlistState[] = [];
     const existing: WatchlistState = {

@@ -42,8 +42,9 @@ export async function fetchTickQuotes(tickers: string[], fetchFn: FetchFn = fetc
     // Same set-membership trick as marketData.ts: "name in_range [...]".
     // The EMA/RSI columns are precomputed by the scanner — a free trend read
     // from the VPS without candles or a proxy (MASTERPLAN B2 / trend.ts).
+    // Volume + 52-week columns feed the Setup-Radar triggers (Beschluss 2026-07-02).
     filter: [{ left: "name", operation: "in_range", right: tickers.map((t) => t.toUpperCase()) }],
-    columns: ["name", "close", "change", "high", "low", "EMA10", "EMA20", "EMA50", "RSI"],
+    columns: ["name", "close", "change", "high", "low", "EMA10", "EMA20", "EMA50", "RSI", "volume", "average_volume_10d_calc", "price_52_week_high", "price_52_week_low"],
     range: [0, Math.max(tickers.length * 2, 60)],
   };
   const json = await postScan(fetchFn, body);
@@ -60,7 +61,8 @@ export async function fetchTickQuotes(tickers: string[], fetchFn: FetchFn = fetc
 
 /**
  * Build a TickQuote from a scanner row, given the column offset of `close`.
- * Layout from `close`: close, change, high, low, EMA10, EMA20, EMA50, RSI.
+ * Layout from `close`: close, change, high, low, EMA10, EMA20, EMA50, RSI,
+ * volume, avg volume 10d, 52w high, 52w low.
  * Returns null when the PRICE fields are broken (missing cells coerce to 0 —
  * a 0-low would instantly trigger every stop, a 0-close a total-loss valuation).
  * Tickers without a quote are simply left untouched by the engine.
@@ -76,14 +78,15 @@ function toQuote(d: unknown[], closeAt: number): TickQuote | null {
     high,
     low,
   };
-  const ema10 = optNum(d[closeAt + 4]);
-  const ema20 = optNum(d[closeAt + 5]);
-  const ema50 = optNum(d[closeAt + 6]);
-  const rsi = optNum(d[closeAt + 7]);
-  if (ema10 !== undefined) q.ema10 = ema10;
-  if (ema20 !== undefined) q.ema20 = ema20;
-  if (ema50 !== undefined) q.ema50 = ema50;
-  if (rsi !== undefined) q.rsi = rsi;
+  type OptionalKey = "ema10" | "ema20" | "ema50" | "rsi" | "volume" | "avgVolume10d" | "high52w" | "low52w";
+  const optional: Array<[OptionalKey, number]> = [
+    ["ema10", 4], ["ema20", 5], ["ema50", 6], ["rsi", 7],
+    ["volume", 8], ["avgVolume10d", 9], ["high52w", 10], ["low52w", 11],
+  ];
+  for (const [key, offset] of optional) {
+    const v = optNum(d[closeAt + offset]);
+    if (v !== undefined) q[key] = v;
+  }
   return q;
 }
 
@@ -104,7 +107,7 @@ export async function fetchTickQuotesEur(holdings: QuoteHolding[], fetchFn: Fetc
   if (isins.length === 0) return out;
   const body = {
     filter: [{ left: "isin", operation: "in_range", right: isins }],
-    columns: ["close", "change", "high", "low", "EMA10", "EMA20", "EMA50", "RSI"],
+    columns: ["close", "change", "high", "low", "EMA10", "EMA20", "EMA50", "RSI", "volume", "average_volume_10d_calc", "price_52_week_high", "price_52_week_low"],
     range: [0, Math.max(isins.length * 12, 60)], // several venues per ISIN
   };
   const json = await postScan(fetchFn, body, "germany");

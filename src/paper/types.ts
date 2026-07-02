@@ -34,6 +34,12 @@ export interface TickQuote {
   ema20?: number;
   ema50?: number;
   rsi?: number;
+  /** Day volume (shares) and its 10-day average — inputs of the volume-spike trigger. */
+  volume?: number;
+  avgVolume10d?: number;
+  /** 52-week extremes — breakout/breakdown trigger references. */
+  high52w?: number;
+  low52w?: number;
 }
 
 export type QuoteMap = Record<string, TickQuote>;
@@ -184,6 +190,8 @@ export interface SetupThresholds {
    * fire — a whipsaw guard. 0 = an exact sign change (today's behaviour).
    */
   emaCrossMinGap: number;
+  /** Ratio volume/avgVolume10d that must be crossed UP for a volume spike. */
+  volumeSpikeFactor: number;
 }
 
 /**
@@ -201,6 +209,7 @@ export const OPPORTUNISM = {
   rsiOverbought: 70, // tune from live data
   rsiOversold: 30, // tune from live data
   emaCrossMinGap: 0, // tune from live data (0 = exact EMA sign change = today's behaviour)
+  volumeSpikeFactor: 2, // tune from live data (intraday volume accumulates → fires conservatively late)
 } as const satisfies SetupThresholds;
 
 /**
@@ -261,7 +270,19 @@ export function freshPortfolio(startBalance: number): Portfolio {
 }
 
 /** A deterministic intraday setup the Setup-Radar can fire on (Stufe 2). Close-based only. */
-export type SetupKind = "ema-cross-up" | "ema-cross-down" | "rsi-overbought" | "rsi-oversold";
+export type SetupKind =
+  | "ema-cross-up"
+  | "ema-cross-down"
+  | "rsi-overbought"
+  | "rsi-oversold"
+  // Radar-Ausbau (Beschluss 2026-07-02) — all from existing scanner columns:
+  | "ema20-pullback-long"
+  | "ema20-pullback-short"
+  | "ema50-reclaim"
+  | "ema50-loss"
+  | "high52w-breakout"
+  | "low52w-breakdown"
+  | "volume-spike";
 
 /** A fired setup trigger for a watched (non-held) ticker. */
 export interface SetupTrigger {
