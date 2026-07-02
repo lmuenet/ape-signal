@@ -99,7 +99,7 @@ describe("applyTick — entry orders", () => {
     expect(portfolio.positions[0].entryPrice).toBeCloseTo(effEntry);
     expect(portfolio.positions[0].units).toBeCloseTo(600 / effEntry);
     expect(portfolio.orders).toHaveLength(0);
-    expect(portfolio.balance).toBe(800); // stake reserved; notional 600 ≥ 500 → no fee
+    expect(portfolio.balance).toBeCloseTo(800 - COSTS.orderFee); // stake reserved; flat fee on every execution
   });
 
   it("fills a limit order on first-tick day-low evidence at the limit price", () => {
@@ -146,7 +146,7 @@ describe("applyTick — exits", () => {
     const effExit = 95 * (1 - COSTS.halfSpread);
     expect(trade?.exitPrice).toBeCloseTo(effExit);
     expect(trade?.pnl).toBeCloseTo(6 * (effExit - 100)); // -30.57
-    expect(portfolio.balance).toBeCloseTo(800 + 200 + 6 * (effExit - 100)); // exit notional ≥ 500 → no fee
+    expect(portfolio.balance).toBeCloseTo(800 + 200 + 6 * (effExit - 100) - COSTS.orderFee); // flat exit fee
     expect(portfolio.positions).toHaveLength(0);
   });
 
@@ -186,7 +186,7 @@ describe("applyTick — exits", () => {
     const trade = events[0].kind === "position-closed" ? events[0].trade : null;
     expect(trade?.reason).toBe("liquidation");
     expect(trade?.pnl).toBeCloseTo(-200); // capped at the stake despite the spread
-    // Stake fully gone; the exit notional (~400) is below 500 → small-order fee.
+    // Stake fully gone; the flat exit fee still applies (fees are not margin).
     expect(portfolio.balance).toBeCloseTo(800 - COSTS.orderFee);
   });
 
@@ -366,7 +366,7 @@ describe("applyTick — ladder mutual-cancel (Stufe 1)", () => {
     expect(portfolio.orders).toHaveLength(0); // sibling cancelled
     expect(events.filter((e) => e.kind === "entry-filled")).toHaveLength(1);
     expect(events.filter((e) => e.kind === "order-expired")).toHaveLength(1);
-    expect(portfolio.balance).toBe(800); // 600 + 200 refunded sibling stake
+    expect(portfolio.balance).toBeCloseTo(800 - COSTS.orderFee); // 600 + 200 refunded sibling stake − entry fee
   });
 
   it("cancels a rung kept earlier in the loop when a later sibling fills (second pass)", () => {
@@ -381,7 +381,7 @@ describe("applyTick — ladder mutual-cancel (Stufe 1)", () => {
     expect(portfolio.positions[0].entryPrice).toBe(99);
     expect(portfolio.orders).toHaveLength(0);
     expect(events.some((e) => e.kind === "order-expired")).toBe(true);
-    expect(portfolio.balance).toBe(800); // far rung refunded
+    expect(portfolio.balance).toBeCloseTo(800 - COSTS.orderFee); // far rung refunded − entry fee
   });
 });
 
@@ -439,7 +439,7 @@ describe("applyAdjustments", () => {
     expect(trade?.reason).toBe("manual");
     const effExit = 110 * (1 - COSTS.halfSpread);
     expect(trade?.pnl).toBeCloseTo(6 * (effExit - 100)); // 59.34
-    expect(portfolio.balance).toBeCloseTo(800 + 200 + 6 * (effExit - 100));
+    expect(portfolio.balance).toBeCloseTo(800 + 200 + 6 * (effExit - 100) - COSTS.orderFee);
   });
 
   it("cancels an order and refunds its stake", () => {
@@ -452,13 +452,11 @@ describe("applyAdjustments", () => {
 });
 
 describe("execution costs", () => {
-  it("charges the flat fee below the free-trade threshold and nothing at or above", () => {
-    expect(executionFee(499.99)).toBeCloseTo(COSTS.orderFee);
-    expect(executionFee(500)).toBe(0);
-    expect(executionFee(2000)).toBe(0);
+  it("charges the flat fee on every execution regardless of volume", () => {
+    expect(executionFee()).toBeCloseTo(COSTS.orderFee);
   });
 
-  it("charges the small-order fee on a market entry below the threshold", () => {
+  it("charges the flat fee on a market entry", () => {
     const small = order({ entryType: "market", limitPrice: undefined, stake: 100, leverage: 1 });
     const p: Portfolio = { ...freshPortfolio(900), orders: [small] };
     const { portfolio } = applyTick(p, { NVDA: q(101, 102, 100) }, { now: NOW, day: DAY, isClose: false });
@@ -467,7 +465,7 @@ describe("execution costs", () => {
   });
 
   it("fills a limit entry exactly at the limit (no spread), fee still applies", () => {
-    const small = order({ stake: 100, leverage: 1 }); // limit 100 → notional 100 < 500
+    const small = order({ stake: 100, leverage: 1 }); // limit 100
     const p: Portfolio = { ...freshPortfolio(900), orders: [small] };
     const { portfolio } = applyTick(p, { NVDA: q(102, 103, 99.5) }, { now: NOW, day: DAY, isClose: false });
     expect(portfolio.positions[0].entryPrice).toBe(100);
@@ -475,7 +473,7 @@ describe("execution costs", () => {
   });
 
   it("records round-trip fees on the closed trade and nets the exit fee from the balance", () => {
-    // 1 unit at entry 100 → both legs stay below the 500 threshold.
+    // 1 unit at entry 100 → flat fee on both legs.
     const pos = position({ stake: 100, leverage: 1, entryPrice: 100, units: 1, takeProfit: undefined, fees: COSTS.orderFee });
     const prev = { NVDA: q(101, 102, 96) };
     const p = withLastTick({ ...freshPortfolio(900), positions: [pos] }, prev);
@@ -584,6 +582,117 @@ describe("expireDayOrders (stale-close path, Lebenszeichen spec)", () => {
     expect(portfolio.orders).toHaveLength(1);
     expect(portfolio.balance).toBe(900);
     expect(events).toEqual([]);
+  });
+});
+
+describe("fill evidence — no phantom fills (levelTraded)", () => {
+  it("first tick: does NOT fill a buy limit below the day's traded range", () => {
+    // Range 95..105, limit 90 — the price never traded at 90.
+    const p: Portfolio = { ...freshPortfolio(800), orders: [order({ limitPrice: 90, stopLoss: 85 })] };
+    const { portfolio, events } = applyTick(p, { NVDA: q(100, 105, 95) }, { now: NOW, day: DAY, isClose: false });
+    expect(events).toHaveLength(0);
+    expect(portfolio.orders).toHaveLength(1);
+  });
+
+  it("first tick: does NOT fill a short limit above the day's traded range", () => {
+    const p: Portfolio = {
+      ...freshPortfolio(800),
+      orders: [order({ side: "short", limitPrice: 110, stopLoss: 120 })],
+    };
+    const { portfolio, events } = applyTick(p, { NVDA: q(100, 105, 95) }, { now: NOW, day: DAY, isClose: false });
+    expect(events).toHaveLength(0);
+    expect(portfolio.orders).toHaveLength(1);
+  });
+
+  it("does NOT fill a buy limit far below the market on a mere new day high", () => {
+    // The old bug: any new day extreme made the one-sided evidence trivially
+    // true for every level on the other side of the price.
+    const prev = { NVDA: q(100, 104, 95) };
+    const p = withLastTick({ ...freshPortfolio(800), orders: [order({ limitPrice: 90, stopLoss: 85 })] }, prev);
+    const { portfolio, events } = applyTick(p, { NVDA: q(104.5, 105, 95) }, { now: NOW, day: DAY, isClose: false });
+    expect(events).toHaveLength(0);
+    expect(portfolio.orders).toHaveLength(1);
+  });
+
+  it("fills when the day low moves across the limit level since the last tick", () => {
+    const prev = { NVDA: q(100, 104, 99) };
+    const p = withLastTick({ ...freshPortfolio(800), orders: [order({ limitPrice: 98, stopLoss: 90 })] }, prev);
+    const { events } = applyTick(p, { NVDA: q(99, 104, 97.5) }, { now: NOW, day: DAY, isClose: false });
+    expect(events[0]?.kind).toBe("entry-filled");
+  });
+});
+
+describe("fill evidence — placement baseline (same-day orders)", () => {
+  const BASELINE = { close: 102, high: 103, low: 97 }; // day low 97 happened BEFORE placement
+
+  it("placeOrders stamps the placement quote as the order's baseline", () => {
+    const { accepted } = placeOrders(
+      freshPortfolio(1000),
+      [{ ticker: "NVDA", side: "long", stake: 150, leverage: 1, entry: 98, stopLoss: 94, thesis: "t" }],
+      { NVDA: q(102, 103, 97) },
+      { now: NOW, day: DAY },
+    );
+    expect(accepted[0].baseline).toEqual(BASELINE);
+  });
+
+  it("ignores pre-placement day-low evidence on the first tick after placement", () => {
+    // Limit 98: the day low (97) is below it, but it predates the order — no fill.
+    const p: Portfolio = {
+      ...freshPortfolio(800),
+      orders: [order({ limitPrice: 98, stopLoss: 94, baseline: BASELINE })],
+    };
+    const { portfolio, events } = applyTick(p, { NVDA: q(102, 103, 97) }, { now: NOW, day: DAY, isClose: false });
+    expect(events).toHaveLength(0);
+    expect(portfolio.orders).toHaveLength(1);
+  });
+
+  it("fills when the low moves below the limit AFTER placement", () => {
+    const p: Portfolio = {
+      ...freshPortfolio(800),
+      orders: [order({ limitPrice: 98, stopLoss: 94, baseline: { close: 102, high: 103, low: 99 } })],
+    };
+    const { events } = applyTick(p, { NVDA: q(101, 103, 97.5) }, { now: NOW, day: DAY, isClose: false });
+    expect(events[0]?.kind).toBe("entry-filled");
+  });
+
+  it("uses whole-day evidence again from the next day on (multi-day order)", () => {
+    // Overnight-gap catch-up of ADR 0001: the stored baseline is stale on later days.
+    const multi = order({ limitPrice: 98, stopLoss: 94, baseline: BASELINE, expiresOn: "2026-06-10" });
+    const p: Portfolio = { ...freshPortfolio(800), orders: [multi] };
+    const { events } = applyTick(p, { NVDA: q(102, 103, 97) }, { now: NOW, day: "2026-06-10", isClose: false });
+    expect(events[0]?.kind).toBe("entry-filled");
+  });
+});
+
+describe("market entries — stale-print and drift guards", () => {
+  const market = (over: Partial<EntryOrder> = {}) =>
+    order({ entryType: "market", limitPrice: undefined, ...over });
+
+  it("does not fill on a collapsed single print (high == low): stale market-maker quote", () => {
+    const p: Portfolio = { ...freshPortfolio(800), orders: [market()] };
+    const { portfolio, events } = applyTick(p, { NVDA: q(100, 100, 100) }, { now: NOW, day: DAY, isClose: false });
+    expect(events).toHaveLength(0);
+    expect(portfolio.orders).toHaveLength(1); // stays open, retries next tick
+  });
+
+  it("does not fill when the close drifted beyond the band from the placement close", () => {
+    const p: Portfolio = {
+      ...freshPortfolio(800),
+      orders: [market({ baseline: { close: 100, high: 101, low: 99 } })],
+    };
+    const { portfolio, events } = applyTick(p, { NVDA: q(104, 105, 99) }, { now: NOW, day: DAY, isClose: false });
+    expect(events).toHaveLength(0);
+    expect(portfolio.orders).toHaveLength(1);
+  });
+
+  it("fills within the drift band at close plus half a spread", () => {
+    const p: Portfolio = {
+      ...freshPortfolio(800),
+      orders: [market({ baseline: { close: 100, high: 101, low: 99 } })],
+    };
+    const { portfolio, events } = applyTick(p, { NVDA: q(102, 103, 99) }, { now: NOW, day: DAY, isClose: false });
+    expect(events[0]?.kind).toBe("entry-filled");
+    expect(portfolio.positions[0].entryPrice).toBeCloseTo(102 * (1 + COSTS.halfSpread));
   });
 });
 
