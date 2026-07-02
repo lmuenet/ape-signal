@@ -6,6 +6,7 @@ import { adminAdjust } from "./engine";
 import { renderPortfolio } from "./format";
 import { buildAdminPrompt } from "./prompts";
 import { parseAdminAction } from "./decision";
+import { toHoldings, type QuoteHolding } from "./quotes";
 import type { Portfolio, QuoteMap } from "./types";
 import type { Language } from "../core/language";
 
@@ -14,7 +15,8 @@ export interface JournalDeps {
   savePortfolio: (p: Portfolio) => void;
   appendJournal: (title: string, body: string) => void;
   readJournalTail: () => string;
-  fetchQuotes: (tickers: string[]) => Promise<QuoteMap>;
+  /** Price held positions on their stored EUR venue (ADR 0005), keyed by ticker. */
+  fetchQuotes: (holdings: QuoteHolding[]) => Promise<QuoteMap>;
   /** Sonnet runner for the admin interpretation. */
   claudeRunner: (prompt: string) => Promise<string>;
   language?: Language;
@@ -28,10 +30,10 @@ export async function runJournalCommand(text: string | undefined, deps: JournalD
 
   if (text === undefined || text.trim() === "") {
     let quotes: QuoteMap = {};
-    const tickers = [...new Set(portfolio.positions.map((p) => p.ticker))];
-    if (tickers.length > 0) {
+    const holdings = toHoldings(portfolio.positions);
+    if (holdings.length > 0) {
       try {
-        quotes = await deps.fetchQuotes(tickers);
+        quotes = await deps.fetchQuotes(holdings);
       } catch {
         // Status still renders; positions show "Kurs fehlt".
       }

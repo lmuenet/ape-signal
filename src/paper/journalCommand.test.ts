@@ -42,6 +42,22 @@ describe("runJournalCommand", () => {
     expect(reply).toContain("nicht eindeutig");
   });
 
+  it("prices held positions via their EUR venue holdings (ADR 0005)", async () => {
+    const p: Portfolio = {
+      ...freshPortfolio(1000),
+      positions: [{
+        id: "AMD-1", ticker: "AMD", side: "long", stake: 100, leverage: 2,
+        entryPrice: 470, units: 200 / 470, stopLoss: 450, openedAt: "2026-07-02T13:00:00.000Z",
+        thesis: "t", deSymbol: "TRADEGATE:AMD", isin: "US0079031078", currency: "EUR",
+      }],
+    };
+    const { deps } = makeDeps(p);
+    await runJournalCommand(undefined, deps);
+    expect(deps.fetchQuotes).toHaveBeenCalledWith([
+      { ticker: "AMD", deSymbol: "TRADEGATE:AMD", isin: "US0079031078" },
+    ]);
+  });
+
   it("handles a pure note without balance change", async () => {
     const raw = '{"action":"note","amount":null,"note":"Besitzer wünscht mehr Vorsicht."}';
     const { deps, saved, journal } = makeDeps(freshPortfolio(750), raw);

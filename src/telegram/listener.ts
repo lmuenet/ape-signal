@@ -14,7 +14,7 @@ import { createTelegramClient } from "./client";
 import { createClaudeRunner, spawnClaudeRunner } from "../claude/invoke";
 import { parseCommand } from "./commands";
 import { runJournalCommand, type JournalDeps } from "../paper/journalCommand";
-import { fetchTickQuotes } from "../paper/quotes";
+import { fetchTickQuotesEur } from "../paper/quotes";
 import { appendJournal, dataDir, loadPortfolio, readJournalTail, savePortfolio } from "../paper/store";
 import { resolveTickInterval, writeTickInterval } from "../paper/tickInterval";
 import { loadSession } from "../config/session";
@@ -72,7 +72,9 @@ async function main(): Promise<void> {
     savePortfolio: (p) => savePortfolio(paperDir, p),
     appendJournal: (title, body) => appendJournal(paperDir, title, body),
     readJournalTail: () => readJournalTail(paperDir),
-    fetchQuotes: (tickers) => fetchTickQuotes(tickers, fetch),
+    // Positions carry their EUR venue (ADR 0005) — price the exact entry venue,
+    // never US/USD quotes against a EUR depot.
+    fetchQuotes: (holdings) => fetchTickQuotesEur(holdings, fetch),
     claudeRunner: createClaudeRunner({ model: "sonnet" }),
     language: env.language,
   };

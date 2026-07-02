@@ -63,6 +63,15 @@ describe("buildDecisionPrompt", () => {
     expect(p).toContain("Bisheriger Track-Record (Lehren)");
     expect(p).toContain("AMD long");
   });
+
+  it("names the flat execution fee so small stakes price it in (ADR 0002)", () => {
+    const p = buildDecisionPrompt({
+      day: "2026-06-11", dossierBlock: "", debateBlock: "", quotesBlock: "",
+      portfolioBlock: "", trackRecordBlock: "", journalTail: "",
+    });
+    expect(p).toContain("€0.99");
+    expect(p).toContain("pro Trade");
+  });
 });
 
 import { buildAdminPrompt, buildDossierPrompt, buildIntradayDossierPrompt, buildIntradayPrompt } from "./prompts";
@@ -91,6 +100,9 @@ describe("buildIntradayPrompt (Stufe 3)", () => {
     expect(p).toContain("EMA10×EMA20 ↑");
     expect(p).toContain("NUR Limit");
     expect(p).toContain("GENAU EINE Order");
+  });
+  it("names the flat execution fee (ADR 0002)", () => {
+    expect(buildIntradayPrompt(base)).toContain("€0.99");
   });
   it("honours the language flag", () => {
     expect(buildIntradayPrompt({ ...base, language: "en" })).toContain("ENGLISCH");

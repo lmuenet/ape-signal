@@ -2,8 +2,14 @@
 // Sonnet researches (dossier), Opus decides (Kür), Sonnet manages (ticks,
 // /journal admin). Free text is German; JSON keys/enums stay English (the
 // parsers in decision.ts require it).
-import { GUARDRAILS } from "./types";
+import { COSTS, GUARDRAILS } from "./types";
 import { freetextLabel, type Language } from "../core/language";
+
+/** One rule line naming the flat per-execution fee (ADR 0002) so the decider
+ *  prices it in on small stakes instead of learning it from the track record. */
+const FEE_RULE =
+  `- Jede Ausführung kostet pauschal €${COSTS.orderFee.toFixed(2)} Gebühr — Einstieg und Ausstieg` +
+  ` zusammen ≈ €${(COSTS.orderFee * 2).toFixed(2)} pro Trade. Bei kleinen Einsätzen frisst das die Marge — preise es ein.`;
 
 function jsonOnly(lang: Language): string {
   return [
@@ -164,6 +170,7 @@ export function buildDecisionPrompt(input: DecisionPromptInput): string {
     "  der Kurs es nachweislich berührt). Ohne ttlDays verfällt eine unausgeführte Order zum",
     `  Handelsschluss; mit ttlDays (1–${GUARDRAILS.maxTtlDays}) bleibt sie entsprechend länger gültig.`,
     "- Verlust ≥ Einsatz wird zwangsliquidiert. Swing-Stil: Haltedauer Tage, kein Daytrading.",
+    FEE_RULE,
     "- Optional pro Trade: wakeAbove/wakeBelow — ein Wake-Up-Band (weiche Schwellen, die",
     "  dich im Tagesverlauf wecken, ohne zu handeln). Ohne Angabe leitet das System",
     "  Bänder automatisch ab.",
@@ -339,6 +346,7 @@ export function buildIntradayPrompt(input: IntradayPromptInput): string {
     "- stopLoss ist PFLICHT auf der Verlustseite. Optional takeProfit/ttlDays/wakeAbove/wakeBelow.",
     "- Deine these MUSS den Trigger zitieren (warum dieses Setup JETZT einen Trade rechtfertigt).",
     "- Höchstens 1 Trade; weitere werden ignoriert. Hebel 1–3, Einsatz ≤ 20% Equity.",
+    FEE_RULE,
     "",
     "Antworte mit GENAU diesem JSON-Format (leeres trades-Array = kein Trade):",
     "{",
