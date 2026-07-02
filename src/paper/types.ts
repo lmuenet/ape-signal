@@ -39,6 +39,15 @@ export interface TickQuote {
 export type QuoteMap = Record<string, TickQuote>;
 
 /**
+ * The quote snapshot at order creation — the fill-evidence baseline for orders
+ * placed mid-day. Without it, the first tick after placement would count the
+ * WHOLE day's high/low as touch evidence, including hours BEFORE the order
+ * existed (the Kür runs ~15:00 but German venues trade since 08:00), producing
+ * fills at levels the price never revisited after placement.
+ */
+export type EvidenceBaseline = Pick<TickQuote, "close" | "high" | "low">;
+
+/**
  * A pending entry order from the Kandidatenkür. The stake is reserved (already
  * deducted from balance) while the order is open; it expires unfilled at the
  * Close tick of the day it was created.
@@ -72,6 +81,13 @@ export interface EntryOrder extends ListingRef {
   rungGroup?: string;
   /** Where the order originated. Absent → "kuer" (the daily Kandidatenkür). */
   source?: TradeSource;
+  /**
+   * Quote snapshot at placement. On the order's creation day the engine uses it
+   * (instead of the whole-day extremes) as the touch-evidence baseline, and the
+   * market-entry drift band anchors on its close. Absent on legacy orders →
+   * previous behaviour.
+   */
+  baseline?: EvidenceBaseline;
 }
 
 /** An open CFD-style position: notional = stake × leverage. */
@@ -145,6 +161,12 @@ export const GUARDRAILS = {
   maxTtlDays: 5,
   /** Separate daily budget tier for the gated intraday opportunism loop (Stufe 3). */
   maxIntradayTrades: 1,
+  /**
+   * Max fraction the tick close may drift from the placement close before a
+   * market entry refuses to fill (Mr Ape decided on a different price level).
+   * The order stays open and retries next tick; unfilled → close-tick expiry.
+   */
+  maxMarketDrift: 0.03,
 } as const;
 
 /**
@@ -183,17 +205,16 @@ export const OPPORTUNISM = {
 
 /**
  * Simulated execution costs so the paper performance doesn't flatter
- * (Smartbroker+/gettex-style fee schedule, see ADR 0002). The half-spread hits
- * market-type executions only (market entry, stop, manual close, liquidation);
- * limit-type fills (limit entry, take-profit) guarantee their level.
+ * (see ADR 0002). The half-spread hits market-type executions only (market
+ * entry, stop, manual close, liquidation); limit-type fills (limit entry,
+ * take-profit) guarantee their level. The flat fee applies to EVERY execution
+ * — deliberately more conservative than real free-from-500 broker schedules.
  */
 export const COSTS = {
   /** Half-spread applied against the trade per market-type execution. */
   halfSpread: 0.001,
-  /** Flat fee per execution below the free-trade threshold. */
+  /** Flat fee per execution (EUR), charged on every entry and exit leg. */
   orderFee: 0.99,
-  /** Order volume (notional) at/above which an execution is free. */
-  freeFrom: 500,
 } as const;
 
 /** Wake-up band policy (ADR 0003): fallback derivation + manager cooldown. */

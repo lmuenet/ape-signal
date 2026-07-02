@@ -51,21 +51,30 @@ export async function fetchTickQuotes(tickers: string[], fetchFn: FetchFn = fetc
     const d = row.d;
     if (!Array.isArray(d)) continue;
     const name = typeof d[0] === "string" ? d[0].toUpperCase() : null;
-    const close = typeof d[1] === "number" ? d[1] : null;
-    if (name === null || close === null || out[name]) continue; // first listing wins
-    out[name] = toQuote(d, 1);
+    if (name === null || out[name]) continue; // first listing wins
+    const q = toQuote(d, 1);
+    if (q !== null) out[name] = q;
   }
   return out;
 }
 
-/** Build a TickQuote from a scanner row, given the column offset of `close`.
- *  Layout from `close`: close, change, high, low, EMA10, EMA20, EMA50, RSI. */
-function toQuote(d: unknown[], closeAt: number): TickQuote {
+/**
+ * Build a TickQuote from a scanner row, given the column offset of `close`.
+ * Layout from `close`: close, change, high, low, EMA10, EMA20, EMA50, RSI.
+ * Returns null when the PRICE fields are broken (missing cells coerce to 0 —
+ * a 0-low would instantly trigger every stop, a 0-close a total-loss valuation).
+ * Tickers without a quote are simply left untouched by the engine.
+ */
+function toQuote(d: unknown[], closeAt: number): TickQuote | null {
+  const close = num(d[closeAt]);
+  const high = num(d[closeAt + 2]);
+  const low = num(d[closeAt + 3]);
+  if (!(close > 0) || !(low > 0) || high < low) return null;
   const q: TickQuote = {
-    close: num(d[closeAt]),
+    close,
     changePct: num(d[closeAt + 1]),
-    high: num(d[closeAt + 2]),
-    low: num(d[closeAt + 3]),
+    high,
+    low,
   };
   const ema10 = optNum(d[closeAt + 4]);
   const ema20 = optNum(d[closeAt + 5]);
@@ -100,10 +109,12 @@ export async function fetchTickQuotesEur(holdings: QuoteHolding[], fetchFn: Fetc
   };
   const json = await postScan(fetchFn, body, "germany");
   // Index every returned venue row by its venue-qualified symbol (row.s).
+  // Rows with broken price fields are dropped (same guard as the US path).
   const bySymbol = new Map<string, TickQuote>();
   for (const row of json.data ?? []) {
     if (!Array.isArray(row.d) || typeof row.s !== "string") continue;
-    bySymbol.set(row.s, toQuote(row.d, 0));
+    const q = toQuote(row.d, 0);
+    if (q !== null) bySymbol.set(row.s, q);
   }
   // Price each holding on its exact entry venue; key the result by its ticker.
   for (const h of holdings) {

@@ -7,6 +7,7 @@ import {
   type Adjustment,
   type ClosedTrade,
   type EntryOrder,
+  type EvidenceBaseline,
   type Portfolio,
   type Position,
   type QuoteMap,
@@ -64,9 +65,46 @@ function touchedUp(level: number, now: TickQuote, prev: TickQuote | undefined, f
   return prev !== undefined && prev.close <= level && now.close >= level;
 }
 
-/** A limit entry fills when the level is provably touched from either side. */
-function touched(level: number, now: TickQuote, prev: TickQuote | undefined, firstTick: boolean): boolean {
-  return touchedDown(level, now, prev, firstTick) || touchedUp(level, now, prev, firstTick);
+/**
+ * Evidence that the price provably TRADED AT `level` since the baseline — the
+ * fill rule for limit entries. Directional touchedDown/touchedUp are one-sided
+ * ("traded at/below" / "at/above") and one of them is trivially true for ANY
+ * level, so combining them would fill every limit order (phantom fills at
+ * levels the price never visited). Instead:
+ * - without a baseline (first tick of the day for an order from an earlier
+ *   day): the level must lie INSIDE today's traded range — the overnight-gap
+ *   catch-up of ADR 0001;
+ * - with a baseline: a day extreme must have moved ACROSS the level since the
+ *   baseline, or the close must have crossed it.
+ */
+function levelTraded(
+  level: number,
+  now: TickQuote,
+  prev: EvidenceBaseline | undefined,
+  firstTick: boolean,
+): boolean {
+  if (firstTick || prev === undefined) return now.low <= level && level <= now.high;
+  if (prev.high < level && now.high >= level) return true;
+  if (prev.low > level && now.low <= level) return true;
+  return (prev.close >= level && now.close <= level) || (prev.close <= level && now.close >= level);
+}
+
+/**
+ * Fill price for a market entry at this tick, or null when the quote is not
+ * trustworthy enough to execute on:
+ * - a collapsed print (high == low) is a single stale market-maker quote on a
+ *   thin venue, not a live price — wait for the next tick;
+ * - a close that drifted more than the band from the placement close means the
+ *   price ran away from the level Mr Ape decided on — don't chase it. The
+ *   order stays open; if the price never comes back it expires at the close.
+ * Legacy orders without a baseline skip the drift check.
+ */
+function marketFillPrice(order: EntryOrder, q: TickQuote): number | null {
+  if (q.high <= q.low) return null;
+  if (order.baseline !== undefined && Math.abs(q.close - order.baseline.close) > order.baseline.close * GUARDRAILS.maxMarketDrift) {
+    return null;
+  }
+  return q.close * (order.side === "long" ? 1 + COSTS.halfSpread : 1 - COSTS.halfSpread);
 }
 
 /** Price at which the loss equals the full stake (forced liquidation level). */
@@ -75,9 +113,9 @@ export function liquidationPrice(pos: Position): number {
   return pos.side === "long" ? pos.entryPrice - move : pos.entryPrice + move;
 }
 
-/** Flat execution fee: free at/above the threshold, small-order fee below. */
-export function executionFee(notional: number): number {
-  return notional >= COSTS.freeFrom ? 0 : COSTS.orderFee;
+/** Flat execution fee — every execution pays it, regardless of order volume. */
+export function executionFee(): number {
+  return COSTS.orderFee;
 }
 
 /**
@@ -96,7 +134,7 @@ function closeTrade(
   const exitPrice = pos.side === "long" ? level * (1 - slip) : level * (1 + slip);
   const raw =
     pos.side === "long" ? pos.units * (exitPrice - pos.entryPrice) : pos.units * (pos.entryPrice - exitPrice);
-  const exitFee = executionFee(pos.units * exitPrice);
+  const exitFee = executionFee();
   return {
     trade: {
       id: pos.id,
@@ -167,17 +205,22 @@ export function applyTick(p: Portfolio, quotes: QuoteMap, opts: TickOptions): Ti
     }
     const q = quotes[order.ticker];
     if (q) {
-      const prev = prevQuotes[order.ticker];
+      // An order placed mid-day carries its placement quote as the evidence
+      // baseline: price action from BEFORE the order existed never fills it.
+      // From the next day on the stored baseline is stale → whole-day evidence.
+      const baselineApplies = order.baseline !== undefined && order.day === opts.day;
+      const evidencePrev = baselineApplies ? order.baseline : prevQuotes[order.ticker];
+      const evidenceFirstTick = !baselineApplies && firstTick;
       // A market entry crosses half a spread; a limit entry guarantees its level.
       const fillPrice =
         order.entryType === "market"
-          ? q.close * (order.side === "long" ? 1 + COSTS.halfSpread : 1 - COSTS.halfSpread)
-          : touched(order.limitPrice!, q, prev, firstTick)
+          ? marketFillPrice(order, q)
+          : levelTraded(order.limitPrice!, q, evidencePrev, evidenceFirstTick)
             ? order.limitPrice!
             : null;
       if (fillPrice !== null && fillPrice > 0) {
         if (order.rungGroup) filledGroups.add(order.rungGroup);
-        const entryFee = executionFee(order.stake * order.leverage);
+        const entryFee = executionFee();
         balance -= entryFee;
         const position: Position = {
           id: order.id,
@@ -412,6 +455,8 @@ export function placeOrders(
       isin: d.isin,
       name: d.name,
       currency: d.currency,
+      // Placement snapshot: touch evidence starts HERE, not at today's open.
+      baseline: { close: q.close, high: q.high, low: q.low },
     };
     portfolio = { ...portfolio, balance: portfolio.balance - stake, orders: [...portfolio.orders, order] };
     accepted.push(order);
