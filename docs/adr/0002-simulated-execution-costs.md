@@ -1,6 +1,7 @@
 # ADR 0002 — Simuliertes Kostenmodell: Spread + Ordergebühren
 
 Datum: 2026-06-10 · Status: akzeptiert · Ergänzt ADR 0001
+· Amendment 2026-07-02 (Pauschalgebühr statt 500er-Schwelle, siehe unten)
 
 ## Kontext
 
@@ -31,3 +32,15 @@ Volumen kosten 0,99 €, darüber 0 €.
   unter 500 Nominal landen.
 - Konstanten in `src/paper/types.ts` (`COSTS`); die Fill-*Erkennung* aus
   ADR 0001 bleibt unverändert, nur der Fill-*Preis* bekommt Kosten.
+
+## Amendment 2026-07-02 — Pauschalgebühr, EUR-Basis
+
+Zwei Aktualisierungen gegenüber dem ursprünglichen Text:
+
+1. **Pauschalgebühr:** Die 500er-Freigrenze entfällt — JEDE Ausführung (Entry-
+   und Exit-Leg) kostet 0,99. Bewusst konservativer als reale
+   Ab-500-gratis-Schemata: die Simulation soll Kosten nie unterschlagen, und
+   die Smartbroker+-Derivate-Anbindung wurde verworfen (Entscheidung
+   2026-07-02). `executionFee()` ist damit volumenunabhängig.
+2. **EUR-Basis:** Seit ADR 0005 sind Kurse, Einsätze und Gebühren durchgängig
+   EUR (der Satz „Depot in USD, Schwelle/Gebühr 1:1" ist obsolet).

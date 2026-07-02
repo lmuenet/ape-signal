@@ -114,13 +114,18 @@ eines Tickers und entsteht nur während der US-Session; Lücken (Nacht,
 Wochenende) sind normal und werden nicht interpoliert.
 
 ### Fill (simulierte Ausführung)
-Eine offene Order gilt als ausgeführt, wenn der Kurs ihr Niveau seit dem letzten
-Monitor-Tick nachweislich erreicht hat: entweder hat der Kurs das Niveau zwischen
-zwei Monitor-Ticks gekreuzt, oder das Tages-High/Low hat sich seitdem über das
-Niveau hinaus bewegt. Konservativ: ein nicht nachweisbarer Spike füllt nicht.
-Market-artige Ausführungen (Market-Entry, Stop, manueller Close, Liquidation)
-slippen einen halben Spread gegen den Trade; jede Ausführung unter 500 Nominal
-kostet eine Ordergebühr (Smartbroker+-Schema) — die Simulation schönt nicht.
+Eine offene Order gilt als ausgeführt, wenn der Kurs ihr Niveau seit ihrer
+Platzierung nachweislich gehandelt hat: entweder hat der Schlusskurs das Niveau
+zwischen zwei Monitor-Ticks gekreuzt, oder ein Tages-Extrem hat sich seitdem
+über das Niveau hinaus bewegt; bei Orders von Vortagen zählt am ersten Tick des
+Tages die volle Tagesspanne (Gap-Nachholen). Kursbewegungen von VOR der
+Platzierung zählen nie als Evidenz (Platzierungs-Baseline). Konservativ: ein
+nicht nachweisbarer Spike füllt nicht. Market-Entries füllen nur auf einem
+lebendigen Kurs (kein kollabierter Einzel-Print) und nur solange der Kurs nicht
+mehr als 3 % vom Platzierungskurs abgelaufen ist. Market-artige Ausführungen
+(Market-Entry, Stop, manueller Close, Liquidation) slippen einen halben Spread
+gegen den Trade; jede Ausführung kostet 0,99 € Ordergebühr — die Simulation
+schönt nicht.
 
 ### Konfiguration (Self-Host)
 Zwei beim Setup gesetzte Stellschrauben in `/etc/ape-signal.env`, vom
