@@ -37,6 +37,9 @@ anpassen darf. Wird nie nach Uhrzeit, sondern ereignisgesteuert ausgelöst:
 durch ein hartes Ereignis (Fill, Stop, Liquidation) oder ein gerissenes
 Wake-Up-Band — plus garantiert beim Tagesabschluss. Band-Wakes unterliegen
 einem Cooldown (max. einer pro 15 Minuten); harte Ereignisse wecken immer.
+Auf Telegram posten Anpassungen als knappes Signal; die Begründung geht als
+`research`-Nachricht (Default stumm). Ein gerissenes Band ohne Aktion meldet
+sich als Alert — ein Wake endet nie still (ADR 0003).
 
 ### Wake-Up-Band
 Ein weiches Schwellenpaar ober- und unterhalb des Kurses einer Position, das
@@ -52,7 +55,10 @@ Mr Ape (Opus) auf Basis des Dossiers und der Debatte bis zu 3 Trade-Kandidaten
 in Orders verwandelt. Bevorzugt **Limit-Leitern** (mehrere Limits auf denselben
 Ticker = eine Conviction; füllt eine, verfallen die anderen) und optional über
 mehrere Tage gültige Orders (`ttlDays`), damit der Einstieg zur richtigen Zeit
-geschieht statt erzwungen zum Open.
+geschieht statt erzwungen zum Open. Auf Telegram postet die Kür ein knappes
+**Order-Signal** (Seite, Level, SL/TP, Hebel, Einsatz, Venue, ISIN, Gültigkeit);
+These und Kür-Journal folgen als eigene `research`-Nachricht (Default stumm) —
+Journal und Depot-UI behalten den vollen Wortlaut.
 
 ### Setup-Radar (Watchlist)
 Eine kleine, einmal täglich zur Kür geseedete Liste **nicht gehaltener** Ticker

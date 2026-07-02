@@ -86,3 +86,24 @@ Neu:
 Damit verschiebt sich der Vertrag von „Stille = ruhiger Markt" zu „Stille =
 ruhiger Markt; ein Wake ist immer sichtbar". Harte Ereignisse (Fill/Stop) posten
 wie bisher ihre eigene Event-Zeile.
+
+## Ergänzung 2026-07-02 — Signal-Split der Manager-Nachricht
+
+Beschluss der Explorations-Runde (siehe
+`docs/superpowers/brainstorms/2026-07-02-exploration-beschluesse-optimierte-version.md`):
+Die gebündelte Manager-Nachricht wird entlang der Verbosity-Kategorien
+aufgeteilt, damit der Chat mit Default-Verbosity ein knappes, nachbildbares
+Signal zeigt:
+
+1. **Signal (`trade`):** nur angewandte Anpassungen (`🔧`-Zeilen) und
+   Manager-Closes — keine Prosa.
+2. **Begründung (`research`, Default stumm):** Journal-Notiz, Band-Riss-Kontext
+   und abgelehnte Anpassungen; mit `TELEGRAM_VERBOSITY=all` wieder im Chat.
+3. **Wake-Hold (`alert`):** Ein gerissenes Band OHNE Aktion postet Riss +
+   Halte-Begründung als Alert. Das hält die Zusage aus der Ergänzung
+   2026-06-18 („ein Wake ist immer sichtbar") auch unter der
+   Default-Verbosity — vorher hing sie an einer faktisch stummen Kategorie.
+
+Die Kür sendet analog Signal (`trade`: Orderzeilen mit Venue/ISIN/Gültigkeit)
+und Begründung (`research`: These + Journal + Risiko-Check-Ablehnungen);
+Journal und Depot-UI behalten unverändert den vollen Wortlaut.

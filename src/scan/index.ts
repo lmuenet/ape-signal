@@ -121,7 +121,9 @@ async function main(): Promise<void> {
       .filter((l) => l && l.trim() !== "")
       .join("\n");
     await runKuer(
-      { scanSummary },
+      // Market label for the Telegram posts — in xetra+us mode two Kürs run per
+      // day; the label says which one is talking.
+      { scanSummary, marketLabel: marketDisplay(market) },
       {
         loadPortfolio: () => loadPortfolio(dir, startBalance),
         savePortfolio: (p) => savePortfolio(dir, p),

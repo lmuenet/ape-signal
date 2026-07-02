@@ -4,8 +4,8 @@
 // it into at most 3 orders within the balanced guardrails. A failed research
 // or debate degrades gracefully; an unreadable decision skips the day (never
 // guessed trades).
-import { placeOrders, tradesPlacedToday } from "./engine";
-import { formatDecisionMirror, formatKuer, orderLine, renderPortfolio, renderQuotes, renderTrackRecord } from "./format";
+import { equity, placeOrders, tradesPlacedToday } from "./engine";
+import { formatDecisionMirror, formatKuerSignal, formatKuerStory, orderLine, renderPortfolio, renderQuotes, renderTrackRecord } from "./format";
 import { buildDebatePrompt, buildDecisionPrompt, buildDossierPrompt } from "./prompts";
 import { parseDebate, parseDecision, parseDossier, type Debate, type Dossier } from "./decision";
 import { GUARDRAILS, type Portfolio, type WatchlistEntry, type WatchlistState } from "./types";
@@ -45,6 +45,8 @@ export interface KuerDeps {
 export interface KuerOptions {
   /** Compact text of today's scan result (verdicts) for the research prompt. */
   scanSummary: string;
+  /** Human market label ("Xetra"/"US-Markt") for the Telegram posts in xetra+us mode. */
+  marketLabel?: string;
 }
 
 function renderDossier(dossier: Dossier | null): string {
@@ -262,8 +264,8 @@ export async function runKuer(opts: KuerOptions, deps: KuerDeps): Promise<void> 
     decision.journal.trim(),
     "",
     accepted.length > 0 ? "Platzierte Orders:" : "Keine Orders platziert.",
-    // Parity with the Telegram Kür (formatKuer→orderLine): show TTL validity
-    // (expiresOn ?? day) and the ladder-rung marker, not just type/stop.
+    // Parity with the Telegram signal (signalOrderLines/orderLine): show TTL
+    // validity (expiresOn ?? day) and the ladder-rung marker, not just type/stop.
     ...accepted.map((o) => `- ${orderLine(o)}`),
     ...rejected.map((r) => `- abgelehnt (${r.reason}): ${r.decision.ticker} ${r.decision.side}`),
   ]
@@ -271,7 +273,24 @@ export async function runKuer(opts: KuerOptions, deps: KuerDeps): Promise<void> 
     .join("\n");
   deps.appendJournal("Kandidatenkür", journalBody);
 
-  await deps.send(formatKuer(accepted, rejected.map((r) => `${r.decision.ticker}: ${r.reason}`), decision.journal));
+  // Signal-Split (Beschluss 2026-07-02): the terse order signal goes out as
+  // "trade"; thesis/journal/rejections follow as a default-muted "research"
+  // story. Journal + UI keep the full record either way.
+  const msgOpts = { day, marketLabel: opts.marketLabel, equity: equity(portfolio, quotes) };
+  await deps.send(formatKuerSignal(accepted, msgOpts));
+  const story = formatKuerStory(
+    accepted,
+    rejected.map((r) => `${r.decision.ticker}: ${r.reason}`),
+    decision.journal,
+    msgOpts,
+  );
+  if (story !== "") {
+    try {
+      await deps.send(story, "research");
+    } catch (err) {
+      console.error(`[kuer] story send failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
 
   // Verdichtete Spiegelung der Herleitung — best-effort, darf die Kür nie brechen.
   const mirror = formatDecisionMirror(dossier, debate);

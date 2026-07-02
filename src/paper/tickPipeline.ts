@@ -9,7 +9,9 @@ import {
   describeAdjustment,
   formatDailySummary,
   formatEvent,
-  formatManagerNote,
+  formatManagerSignal,
+  formatManagerStory,
+  formatWakeHold,
   renderPortfolio,
   renderQuotes,
 } from "./format";
@@ -204,11 +206,22 @@ export async function runTick(opts: TickOptions, deps: TickDeps): Promise<void> 
       for (const r of rejected) noteLines.push(`✗ abgelehnt (${r.reason}): ${describeAdjustment(r.adjustment)}`);
       if (noteLines.length > 0) deps.appendJournal(`Tick ${stamp.slice(11)} — Mr Ape`, noteLines.join("\n"));
 
-      // A band breach is always surfaced (with Mr Ape's hold reason when he
-      // gives one), so a wake never ends in silence (ADR 0003 amendment). A
-      // hard-event/close wake without a breach stays quiet on a no-op as before.
-      const bundle = formatManagerNote(stamp.slice(11), journalText, applied, rejected, closeEvents, breachLines);
-      if (bundle !== "") await deps.send(bundle);
+      // Signal-Split (Beschluss 2026-07-02): applied adjustments/closes go out
+      // as a terse "trade" signal, the reasoning as default-muted "research".
+      // A band breach with NO action is an "alert" — a wake must never end in
+      // silence (ADR 0003), and default verbosity mutes research.
+      const time = stamp.slice(11);
+      const signal = formatManagerSignal(time, applied, closeEvents);
+      if (signal !== "") {
+        await deps.send(signal);
+        const story = formatManagerStory(time, journalText, rejected, breachLines);
+        if (story !== "") await deps.send(story, "research");
+      } else if (breachLines.length > 0) {
+        await deps.send(formatWakeHold(time, journalText, breachLines), "alert");
+      } else {
+        const story = formatManagerStory(time, journalText, rejected, breachLines);
+        if (story !== "") await deps.send(story, "research");
+      }
       deps.savePortfolio(portfolio);
     } catch (err) {
       // Stops stay where they are — the deterministic engine keeps protecting.

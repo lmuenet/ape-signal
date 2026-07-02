@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { describeAdjustment, formatDailySummary, formatDecisionMirror, formatEvent, formatManagerNote, orderLine, renderPortfolio, renderTrackRecord } from "./format";
+import { describeAdjustment, formatDailySummary, formatDecisionMirror, formatEvent, formatKuerSignal, formatKuerStory, formatManagerSignal, formatManagerStory, formatWakeHold, orderLine, renderPortfolio, renderTrackRecord } from "./format";
 import type { Adjustment, ClosedTrade, EntryOrder, Portfolio, Position, QuoteMap, TickEvent } from "./types";
 import type { Debate, Dossier } from "./decision";
 
@@ -121,11 +121,12 @@ describe("describeAdjustment", () => {
   });
 });
 
-describe("formatManagerNote", () => {
+describe("formatManagerSignal / formatManagerStory / formatWakeHold (Signal-Split)", () => {
   const applied: Adjustment[] = [{ type: "set_stop", positionId: "P1", price: 98 }];
   const rejected = [{ adjustment: { type: "set_take_profit", positionId: "P1", price: 90 } as Adjustment, reason: "falsche Seite" }];
+  const breach = ["⚡ AAPL: Kurs 111 riss Wake-Band oben (110)"];
 
-  it("bundles journal, applied, rejected and close events into one message", () => {
+  it("signal carries only closes and applied adjustments — no prose, no rejections", () => {
     const closeEvent: TickEvent = {
       kind: "position-closed",
       trade: {
@@ -134,29 +135,65 @@ describe("formatManagerNote", () => {
         openedAt: "2026-06-10T14:00:00.000Z", closedAt: "2026-06-11T15:00:00.000Z",
       },
     };
-    const msg = formatManagerNote("15:35", "Stop nachgezogen, Trend intakt.", applied, rejected, [closeEvent]);
+    const msg = formatManagerSignal("15:35", applied, [closeEvent]);
     expect(msg).toContain("Mr Ape — Manager-Tick 15:35");
-    expect(msg).toContain("Stop nachgezogen");
     expect(msg).toContain("🔧 Stop von P1 auf 98");
-    expect(msg).toContain("✗ abgelehnt (falsche Seite)");
     expect(msg).toContain("TSLA");
+    expect(msg).not.toContain("abgelehnt");
   });
 
-  it('returns "" when there is nothing to say', () => {
-    expect(formatManagerNote("15:35", "", [], [], [])).toBe("");
+  it('signal is "" when nothing actionable happened', () => {
+    expect(formatManagerSignal("15:35", [], [])).toBe("");
   });
 
-  it("always surfaces a band breach, even on a hold with no reason", () => {
-    const msg = formatManagerNote("15:35", "", [], [], [], ["⚡ AAPL: Kurs 111 riss Wake-Band oben (110)"]);
+  it("story bundles journal, breach context and rejections — '' without content", () => {
+    const msg = formatManagerStory("15:35", "Stop nachgezogen, Trend intakt.", rejected, breach);
+    expect(msg).toContain("Begründung");
+    expect(msg).toContain("Stop nachgezogen");
+    expect(msg).toContain("✗ abgelehnt (falsche Seite)");
     expect(msg).toContain("riss Wake-Band oben");
-    expect(msg).toContain("hält die Position");
+    expect(formatManagerStory("15:35", "", [], [])).toBe("");
   });
 
-  it("pairs the breach with Mr Ape's reason when he gives one", () => {
-    const msg = formatManagerNote("15:35", "Halte — Trend intakt.", [], [], [], ["⚡ AAPL: Kurs 111 riss Wake-Band oben (110)"]);
-    expect(msg).toContain("riss Wake-Band oben");
-    expect(msg).toContain("Trend intakt");
-    expect(msg).not.toContain("keine Begründung");
+  it("wake-hold always surfaces the breach, with reason or default note", () => {
+    const held = formatWakeHold("15:35", "", breach);
+    expect(held).toContain("riss Wake-Band oben");
+    expect(held).toContain("hält die Position");
+    const reasoned = formatWakeHold("15:35", "Halte — Trend intakt.", breach);
+    expect(reasoned).toContain("Trend intakt");
+    expect(reasoned).not.toContain("keine Begründung");
+  });
+});
+
+describe("formatKuerSignal / formatKuerStory (Signal-Split)", () => {
+  const order: EntryOrder = {
+    id: "AMD-2026-07-02-1", ticker: "AMD", side: "long", stake: 380, leverage: 3,
+    entryType: "limit", limitPrice: 472.5, stopLoss: 451, takeProfit: 515,
+    expiresOn: "2026-07-03", thesis: "Pullback in intaktem Trend.",
+    createdAt: "2026-07-02T13:15:59.736Z", day: "2026-07-02",
+    deSymbol: "TRADEGATE:AMD", isin: "US0079031078", name: "Advanced Micro Devices, Inc.", currency: "EUR",
+  };
+
+  it("renders the terse 3-line signal with venue, ISIN, validity and %-equity", () => {
+    const msg = formatKuerSignal([order], { day: "2026-07-02", marketLabel: "US-Markt", equity: 2000 });
+    expect(msg).toContain("Kandidatenkür 2026-07-02 · US-Markt");
+    expect(msg).toContain("🟢 LONG AMD — Limit €472.50");
+    expect(msg).toContain("SL 451 · TP 515 · 3x · Einsatz €380.00 (19%)");
+    expect(msg).toContain("Tradegate · US0079031078 · gültig bis 2026-07-03");
+    expect(msg).not.toContain("Pullback"); // no thesis in the signal
+  });
+
+  it("keeps the no-trade day as a signal", () => {
+    expect(formatKuerSignal([], { day: "2026-07-02" })).toContain("keine neuen Trades");
+  });
+
+  it("story carries thesis, journal and rejections — '' without content", () => {
+    const msg = formatKuerStory([order], ["XYZ: kein Kurs"], "Ruhiger Markt.", { day: "2026-07-02" });
+    expect(msg).toContain("Begründung");
+    expect(msg).toContain("AMD: Pullback in intaktem Trend.");
+    expect(msg).toContain("Ruhiger Markt.");
+    expect(msg).toContain("✗ XYZ: kein Kurs");
+    expect(formatKuerStory([], [], "", { day: "2026-07-02" })).toBe("");
   });
 });
 

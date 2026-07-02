@@ -110,7 +110,7 @@ describe("runTick", () => {
     expect(journal[0][1]).toContain("TSLA");
   });
 
-  it("applies a Sonnet stop adjustment after a band breach and posts the bundled note", async () => {
+  it("applies a Sonnet stop adjustment after a band breach: terse signal + research story", async () => {
     // wakeAbove 109 < close 110 → breach wakes the manager (ADR 0003)
     const p: Portfolio = { ...freshPortfolio(800), positions: [position({ wakeAbove: 109, wakeBelow: 100 })], lastTick: { at: "x", day: "2026-06-09", quotes: { NVDA: { close: 108, changePct: 0, high: 109, low: 99 } } } };
     const raw = JSON.stringify({
@@ -121,9 +121,12 @@ describe("runTick", () => {
     await runTick({ isClose: false }, deps);
     expect(saved.at(-1)?.positions[0].stopLoss).toBe(102);
     expect(journal.some(([, body]) => body.includes("Stop nachgezogen"))).toBe(true);
-    const bundle = sent.find((m) => m.includes("Manager-Tick"));
-    expect(bundle).toContain("Stop nachgezogen");
-    expect(bundle).toContain("🔧 Stop von NVDA-2026-06-09-1 auf 102");
+    // Signal-Split: the trade signal carries the adjustment, the story the why.
+    const signal = sent.find((m) => m.includes("Manager-Tick") && !m.includes("Begründung"));
+    expect(signal).toContain("🔧 Stop von NVDA-2026-06-09-1 auf 102");
+    expect(signal).not.toContain("Stop nachgezogen,");
+    const story = sent.find((m) => m.includes("Begründung"));
+    expect(story).toContain("Stop nachgezogen");
   });
 
   it("posts a Mr-Ape-initiated close to Telegram (inside the bundle)", async () => {

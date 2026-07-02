@@ -89,20 +89,90 @@ export function formatEvent(e: TickEvent): string {
   return `${emoji} ${closeReasonLabel[t.reason]}: ${label(t)} ${t.side} @ ${t.exitPrice} — P&L ${money(t.pnl, t.currency)} (${sign((t.pnl / t.stake) * 100)}%)`;
 }
 
-/** The Kandidatenkür Telegram post. */
-export function formatKuer(accepted: EntryOrder[], rejectedReasons: string[], journal: string): string {
-  const lines = [`🦍 Mr Ape — Kandidatenkür (${new Date().toISOString().slice(0, 10)})`, ""];
+/** "TRADEGATE:AMD" → "Tradegate" — the human venue part of a deSymbol, null without one. */
+function venueLabel(deSymbol?: string): string | null {
+  const raw = deSymbol?.split(":")[0]?.trim();
+  if (!raw) return null;
+  return raw[0].toUpperCase() + raw.slice(1).toLowerCase();
+}
+
+const SIDE_TAG: Record<EntryOrder["side"], string> = { long: "🟢 LONG", short: "🔻 SHORT" };
+
+/**
+ * Three terse signal lines for one entry order (Signal-Split, Beschluss
+ * 2026-07-02): what to do, the guardrail levels + size, and how to reproduce it
+ * (venue, ISIN, validity). Deliberately NO thesis — the story travels
+ * separately as a "research" message.
+ */
+export function signalOrderLines(o: EntryOrder, equityAtPlacement?: number): string[] {
+  const entry = o.entryType === "market" ? "Market" : `Limit ${money(o.limitPrice ?? 0, o.currency)}`;
+  const pct =
+    equityAtPlacement !== undefined && equityAtPlacement > 0
+      ? ` (${Math.round((o.stake / equityAtPlacement) * 100)}%)`
+      : "";
+  const levels = [
+    `SL ${o.stopLoss}`,
+    ...(o.takeProfit !== undefined ? [`TP ${o.takeProfit}`] : []),
+    `${o.leverage}x`,
+    `Einsatz ${money(o.stake, o.currency)}${pct}`,
+  ].join(" · ");
+  const venue = venueLabel(o.deSymbol);
+  const origin = [
+    ...(venue ? [venue] : []),
+    ...(o.isin ? [o.isin] : []),
+    `gültig bis ${o.expiresOn ?? o.day}`,
+    ...(o.rungGroup !== undefined ? ["Leiter-Rung"] : []),
+  ].join(" · ");
+  return [`${SIDE_TAG[o.side]} ${o.ticker} — ${entry}`, `   ${levels}`, `   ${origin}`];
+}
+
+export interface KuerMessageOpts {
+  day: string;
+  /** Human market label ("Xetra"/"US-Markt") in xetra+us mode — which Kür this is. */
+  marketLabel?: string;
+  /** Equity at placement — renders each stake also as % of equity. */
+  equity?: number;
+}
+
+const kuerHeader = (opts: KuerMessageOpts, suffix = "") =>
+  `🦍 Mr Ape — Kandidatenkür ${opts.day}${opts.marketLabel ? ` · ${opts.marketLabel}` : ""}${suffix}`;
+
+/** The terse Kür signal post ("trade"): one 3-line block per placed order, no prose. */
+export function formatKuerSignal(accepted: EntryOrder[], opts: KuerMessageOpts): string {
+  const lines = [kuerHeader(opts), ""];
   if (accepted.length === 0) {
     lines.push("Heute keine neuen Trades — kein Setup hat überzeugt.");
   } else {
-    for (const o of accepted) lines.push("• " + orderLine(o), o.thesis ? `  ↳ ${o.thesis}` : "");
+    accepted.forEach((o, i) => {
+      if (i > 0) lines.push("");
+      lines.push(...signalOrderLines(o, opts.equity));
+    });
   }
-  if (rejectedReasons.length > 0) {
-    lines.push("", "Vom Risiko-Check abgelehnt:", ...rejectedReasons.map((r) => `  ✗ ${r}`));
-  }
-  if (journal.trim() !== "") lines.push("", journal.trim());
   lines.push("", "Paper-Trading — kein echtes Geld, keine Anlageberatung.");
-  return lines.filter((l) => l !== undefined).join("\n");
+  return lines.join("\n");
+}
+
+/**
+ * The Kür's reasoning ("research", default-muted): journal, per-order theses and
+ * risk-check rejections. "" when there is nothing to explain.
+ */
+export function formatKuerStory(
+  accepted: EntryOrder[],
+  rejectedReasons: string[],
+  journal: string,
+  opts: KuerMessageOpts,
+): string {
+  const parts: string[] = [];
+  if (journal.trim() !== "") parts.push(journal.trim());
+  const theses = accepted
+    .filter((o) => o.thesis && o.thesis.trim() !== "")
+    .map((o) => `${o.ticker}: ${o.thesis?.trim()}`);
+  if (theses.length > 0) parts.push(theses.join("\n"));
+  if (rejectedReasons.length > 0) {
+    parts.push(["Vom Risiko-Check abgelehnt:", ...rejectedReasons.map((r) => `  ✗ ${r}`)].join("\n"));
+  }
+  if (parts.length === 0) return "";
+  return [kuerHeader(opts, " — Begründung"), "", parts.join("\n\n")].join("\n");
 }
 
 /** One human line per manager adjustment (journal + Telegram). */
@@ -122,41 +192,46 @@ export function describeAdjustment(a: Adjustment): string {
 }
 
 /**
- * The bundled Telegram message for one manager tick (ADR 0003): the why
- * (journal note), every applied adjustment, rejections with reason, and
- * manager-initiated closes. "" when there is nothing to say.
+ * The terse manager signal ("trade", Signal-Split Beschluss 2026-07-02): only
+ * what actually changed — manager-initiated closes and applied adjustments.
+ * "" when nothing actionable happened (the story/hold paths cover the rest).
  */
-export function formatManagerNote(
-  time: string,
-  journal: string,
-  applied: Adjustment[],
-  rejected: Array<{ adjustment: Adjustment; reason: string }>,
-  closeEvents: TickEvent[],
-  breachLines: string[] = [],
-): string {
-  if (
-    journal.trim() === "" &&
-    applied.length === 0 &&
-    rejected.length === 0 &&
-    closeEvents.length === 0 &&
-    breachLines.length === 0
-  ) {
-    return "";
-  }
+export function formatManagerSignal(time: string, applied: Adjustment[], closeEvents: TickEvent[]): string {
+  const nonClose = applied.filter((a) => a.type !== "close_position");
+  if (nonClose.length === 0 && closeEvents.length === 0) return "";
   const lines = [`🦍 Mr Ape — Manager-Tick ${time}`];
-  // A breached wake band is always surfaced — even on a hold (ADR 0003
-  // amendment): a wake must never end in silence. With no reason from Mr Ape we
-  // still say he looked and held.
-  if (breachLines.length > 0) lines.push("", ...breachLines);
-  if (journal.trim() !== "") lines.push("", journal.trim());
-  else if (breachLines.length > 0 && applied.length === 0 && closeEvents.length === 0) {
-    lines.push("", "↳ Mr Ape hält die Position (keine Begründung geliefert).");
-  }
   const closes = closeEvents.map(formatEvent);
   if (closes.length > 0) lines.push("", ...closes);
-  const nonClose = applied.filter((a) => a.type !== "close_position");
   if (nonClose.length > 0) lines.push("", ...nonClose.map((a) => `🔧 ${describeAdjustment(a)}`));
+  return lines.join("\n");
+}
+
+/**
+ * The manager's reasoning ("research", default-muted): journal note, breach
+ * context and rejected adjustments. "" when there is nothing to explain.
+ */
+export function formatManagerStory(
+  time: string,
+  journal: string,
+  rejected: Array<{ adjustment: Adjustment; reason: string }>,
+  breachLines: string[] = [],
+): string {
+  if (journal.trim() === "" && rejected.length === 0 && breachLines.length === 0) return "";
+  const lines = [`🦍 Mr Ape — Manager-Tick ${time} — Begründung`];
+  if (breachLines.length > 0) lines.push("", ...breachLines);
+  if (journal.trim() !== "") lines.push("", journal.trim());
   if (rejected.length > 0) lines.push("", ...rejected.map((r) => `✗ abgelehnt (${r.reason}): ${describeAdjustment(r.adjustment)}`));
+  return lines.join("\n");
+}
+
+/**
+ * A breached wake band with NO resulting action ("alert"): breach lines plus
+ * Mr Ape's hold reason — a wake must never end in silence (ADR 0003), and with
+ * default verbosity only trade/digest/alert reach the chat.
+ */
+export function formatWakeHold(time: string, journal: string, breachLines: string[]): string {
+  const lines = [`🦍 Mr Ape — Manager-Tick ${time}`, "", ...breachLines];
+  lines.push("", journal.trim() !== "" ? journal.trim() : "↳ Mr Ape hält die Position (keine Begründung geliefert).");
   return lines.join("\n");
 }
 

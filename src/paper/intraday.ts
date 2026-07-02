@@ -165,5 +165,14 @@ export async function runIntradayOpportunity(trigger: SetupTrigger, deps: Intrad
   const journalText = decision.journal.trim();
   const orderText = `🟢 Intraday-Limit gesetzt: ${label(o)} ${o.side} ${o.leverage}x, Einsatz ${money(o.stake, o.currency)}, Limit ${o.limitPrice}, SL ${o.stopLoss}${o.takeProfit !== undefined ? `, TP ${o.takeProfit}` : ""}${o.expiresOn ? ` (bis ${o.expiresOn})` : ""}`;
   deps.appendJournal(`Intraday ${stamp.slice(11)} — ${ticker}`, [journalText, orderText].filter((l) => l !== "").join("\n"));
-  await deps.send([`🦍 Mr Ape — Intraday-Chance ${ticker} (${trigger.note})`, journalText, orderText].filter((l) => l !== "").join("\n"));
+  // Signal-Split (Beschluss 2026-07-02): the placement is the "trade" signal;
+  // the thesis follows as a default-muted "research" story (journal keeps both).
+  await deps.send([`🦍 Mr Ape — Intraday-Chance ${ticker} (${trigger.note})`, orderText].join("\n"));
+  if (journalText !== "") {
+    try {
+      await deps.send(`🦍 Mr Ape — Intraday ${ticker} — Begründung\n${journalText}`, "research");
+    } catch (err) {
+      console.error(`[intraday] story send failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
 }
