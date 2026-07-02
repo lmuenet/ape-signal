@@ -80,11 +80,11 @@ export async function runIntradayOpportunity(trigger: SetupTrigger, deps: Intrad
     ({ quotes, listings } = await deps.fetchQuotes([ticker]));
   } catch (err) {
     console.error(`[intraday] quote fetch failed for ${ticker}: ${err instanceof Error ? err.message : String(err)}`);
-    await deps.send(`⚠️ Mr Ape — Intraday ${ticker}: Kurse nicht verfügbar, übersprungen.`, "progress");
+    await deps.send(`⚠️ Mr Ape — Intraday ${ticker}: Kurse nicht verfügbar, übersprungen.`, "alert");
     return;
   }
   if (!quotes[ticker]) {
-    await deps.send(`⚠️ Mr Ape — Intraday ${ticker}: keine Kurse, übersprungen.`, "progress");
+    await deps.send(`⚠️ Mr Ape — Intraday ${ticker}: keine Kurse, übersprungen.`, "alert");
     return;
   }
 
@@ -124,7 +124,9 @@ export async function runIntradayOpportunity(trigger: SetupTrigger, deps: Intrad
         ? "Timeout"
         : "Fehler";
     deps.appendJournal(`Intraday ${stamp.slice(11)} — ${ticker}`, `Nicht entschieden (${why}).`);
-    await deps.send(`⚠️ Mr Ape — Intraday ${ticker}: nicht entschieden (${why}).`, "progress");
+    // Failures/degrades must be visible with default verbosity (Beschluss 2026-07-02);
+    // benign outcomes below (no trade / limit-only discard) stay "progress".
+    await deps.send(`⚠️ Mr Ape — Intraday ${ticker}: nicht entschieden (${why}).`, "alert");
     return;
   }
 
@@ -153,7 +155,9 @@ export async function runIntradayOpportunity(trigger: SetupTrigger, deps: Intrad
   if (accepted.length === 0) {
     const reason = rejected[0]?.reason ?? "abgelehnt";
     deps.appendJournal(`Intraday ${stamp.slice(11)} — ${ticker}`, `Order abgelehnt (${reason}).`);
-    await deps.send(`🦍 Mr Ape — Intraday ${ticker}: Order abgelehnt (${reason}).`, "progress");
+    // "trade": a guardrail rejection is trade-lifecycle news — an order almost
+    // happened; that must reach the default-verbosity chat.
+    await deps.send(`🦍 Mr Ape — Intraday ${ticker}: Order abgelehnt (${reason}).`, "trade");
     return;
   }
 

@@ -90,7 +90,9 @@ async function tryDegradeAlert(deps: KuerDeps, stage: string, err: unknown): Pro
   const alert = degradeAlert(stage, err);
   if (!alert) return;
   try {
-    await deps.send(alert, "progress");
+    // "alert": a limit/timeout degrade is one of the "must be surfaced" promises —
+    // with the default verbosity a "progress" send would be muted (Beschluss 2026-07-02).
+    await deps.send(alert, "alert");
   } catch (sendErr) {
     console.error(`[kuer] degrade alert send failed: ${sendErr instanceof Error ? sendErr.message : String(sendErr)}`);
   }

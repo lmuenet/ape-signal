@@ -310,10 +310,16 @@ describe("quote-failure hardening (Lebenszeichen spec)", () => {
 
   it("alerts immediately when the manager call fails (stops stay)", async () => {
     const p: Portfolio = { ...freshPortfolio(900), orders: [order()] };
-    const { deps, sent } = makeDeps(p, { TSLA: { close: 200, changePct: 0, high: 201, low: 199 } });
+    const { deps } = makeDeps(p, { TSLA: { close: 200, changePct: 0, high: 201, low: 199 } });
     (deps.claudeRunner as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("boom"));
+    // Category matters: with default verbosity a "progress" send would be muted —
+    // a failed manager call must reach the chat (Beschluss 2026-07-02).
+    const tagged: Array<[string, string | undefined]> = [];
+    deps.send = vi.fn(async (t: string, c?: string) => {
+      tagged.push([t, c]);
+    });
     await runTick({ isClose: false }, deps);
-    expect(sent.some((m) => m.includes("⚠️ Mr Ape nicht erreichbar"))).toBe(true);
+    expect(tagged.find(([t]) => t.includes("⚠️ Mr Ape nicht erreichbar"))?.[1]).toBe("alert");
   });
 
   it("posts a specific Claude-limit alert when the manager is rate-limited", async () => {

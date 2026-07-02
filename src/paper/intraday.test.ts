@@ -97,6 +97,36 @@ describe("runIntradayOpportunity", () => {
     expect(sent.some((m) => m.includes("nicht entschieden"))).toBe(true);
   });
 
+  it("tags failures as alert and guardrail rejections as trade (Beschluss 2026-07-02)", async () => {
+    const tagged: Array<[string, string | undefined]> = [];
+    const capture = vi.fn(async (t: string, c?: string) => {
+      tagged.push([t, c]);
+    });
+    const { deps } = makeDeps(freshPortfolio(1000), {
+      send: capture,
+      decideRunner: vi.fn(async () => {
+        throw new ClaudeLimitError("usage limit reached", "Intraday-Entscheidung");
+      }),
+    });
+    await runIntradayOpportunity(trigger, deps);
+    expect(tagged.find(([t]) => t.includes("nicht entschieden"))?.[1]).toBe("alert");
+
+    // Guardrail rejection (stop on the wrong side; an oversized stake is only
+    // clamped) is trade-lifecycle news, not noise.
+    tagged.length = 0;
+    const { deps: deps2 } = makeDeps(freshPortfolio(1000), {
+      send: capture,
+      decideRunner: vi.fn(async () =>
+        JSON.stringify({
+          trades: [{ ticker: "AMD", side: "long", stake: 150, leverage: 1, entry: 99, stopLoss: 105, thesis: "x" }],
+          journal: "",
+        }),
+      ),
+    });
+    await runIntradayOpportunity(trigger, deps2);
+    expect(tagged.find(([t]) => t.includes("Order abgelehnt"))?.[1]).toBe("trade");
+  });
+
   it("decides anyway when research fails (degrade), still posting an outcome", async () => {
     const { deps, sent } = makeDeps(freshPortfolio(1000), {
       researchRunner: vi.fn(async () => {

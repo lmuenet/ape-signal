@@ -52,6 +52,20 @@ function makeDeps(p: Portfolio, quotes: QuoteMap, over: Partial<KuerDeps> = {}) 
 const quotes: QuoteMap = { NVDA: { close: 100, changePct: 1, high: 101, low: 99 } };
 
 describe("runKuer", () => {
+  it("tags research-degrade notes as alert (visible with default verbosity)", async () => {
+    const tagged: Array<[string, string | undefined]> = [];
+    const { deps } = makeDeps(freshPortfolio(1000), quotes, {
+      researchRunner: vi.fn(async () => {
+        throw new ClaudeLimitError("usage limit reached", "Research");
+      }),
+      send: vi.fn(async (t: string, c?: string) => {
+        tagged.push([t, c]);
+      }),
+    });
+    await runKuer({ scanSummary: "" }, deps);
+    expect(tagged.find(([t]) => t.includes("reduzierter Datenbasis"))?.[1]).toBe("alert");
+  });
+
   it("carries the resolved EUR listing from the Kür onto the placed order (ADR 0005)", async () => {
     const listings = new Map([
       ["NVDA", { usTicker: "NVDA", isin: "US67066G1040", name: "NVIDIA Corporation", deSymbol: "TRADEGATE:NVD", venue: "TRADEGATE", currency: "EUR", close: 100 }],

@@ -220,9 +220,11 @@ export async function runTick(opts: TickOptions, deps: TickDeps): Promise<void> 
             ? "⚠️ Mr Ape: Zeitüberschreitung beim Manager-Tick — Stops bleiben unverändert."
             : "⚠️ Mr Ape nicht erreichbar (Manager-Call fehlgeschlagen) — Stops bleiben unverändert.";
       // Surface the breach even when the manager call failed (deterministic).
+      // "alert": with default verbosity a "progress" send is muted — a failed
+      // manager call must never be silent (Beschluss 2026-07-02).
       const text = breachLines.length > 0 ? `${breachLines.join("\n")}\n${reason}` : reason;
       try {
-        await deps.send(text, "progress");
+        await deps.send(text, "alert");
       } catch (sendErr) {
         console.error(`[tick] failed to send manager-failure alert: ${sendErr instanceof Error ? sendErr.message : String(sendErr)}`);
       }
