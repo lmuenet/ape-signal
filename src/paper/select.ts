@@ -11,7 +11,7 @@ import { parseDebate, parseDecision, parseDossier, type Debate, type Dossier } f
 import { GUARDRAILS, type Portfolio, type WatchlistEntry, type WatchlistState } from "./types";
 import { enrichWithListing, type EurPricing } from "./eurPricing";
 import { toHoldings, type QuoteHolding } from "./quotes";
-import { seedWatchlist } from "./watchlist";
+import { mergeWatchlist } from "./watchlist";
 import type { KuerArtifact } from "./kuerArtifact";
 import type { Language } from "../core/language";
 import { ClaudeError } from "../claude/invoke";
@@ -37,6 +37,9 @@ export interface KuerDeps {
   saveKuer: (artifact: KuerArtifact) => void;
   /** Seed the intraday Setup-Radar watchlist (Stufe 2). Optional; failures must not break the Kür. */
   saveWatchlist?: (state: WatchlistState) => void;
+  /** Current watchlist state — the second Kür of a day MERGES instead of reseeding
+   *  (firedKinds survive, Beschluss 2026-07-02). Optional; null = fresh seed. */
+  loadWatchlist?: () => WatchlistState | null;
   now?: () => Date;
   berlinDay: (d: Date) => string;
   language?: Language;
@@ -47,6 +50,8 @@ export interface KuerOptions {
   scanSummary: string;
   /** Human market label ("Xetra"/"US-Markt") for the Telegram posts in xetra+us mode. */
   marketLabel?: string;
+  /** Market name ("xetra"/"us") — keys the Kür artifact so two Kürs per day coexist. */
+  market?: string;
 }
 
 function renderDossier(dossier: Dossier | null): string {
@@ -124,7 +129,8 @@ function trySeedWatchlist(
     .filter((c) => !tradedTickers.has(c.ticker.toUpperCase()))
     .map((c) => ({ ticker: c.ticker, note: c.angle || c.catalyst || "", addedDay: day, firedKinds: [] }));
   try {
-    deps.saveWatchlist(seedWatchlist(day, entries));
+    const existing = deps.loadWatchlist ? deps.loadWatchlist() : null;
+    deps.saveWatchlist(mergeWatchlist(existing, day, entries));
   } catch (err) {
     console.error(`[kuer] seeding watchlist failed: ${err instanceof Error ? err.message : String(err)}`);
   }
@@ -194,6 +200,7 @@ export async function runKuer(opts: KuerOptions, deps: KuerDeps): Promise<void> 
     if (err instanceof ClaudeError && (err.kind === "limit" || err.kind === "timeout")) {
       trySaveKuer(deps, {
         day,
+        market: opts.market,
         createdAt: now.toISOString(),
         scanSummary: opts.scanSummary,
         dossier,
@@ -218,6 +225,7 @@ export async function runKuer(opts: KuerOptions, deps: KuerDeps): Promise<void> 
     console.error("[kuer] unreadable decision, skipping today (no guessed trades).");
     trySaveKuer(deps, {
       day,
+      market: opts.market,
       createdAt: now.toISOString(),
       scanSummary: opts.scanSummary,
       dossier,
@@ -250,6 +258,7 @@ export async function runKuer(opts: KuerOptions, deps: KuerDeps): Promise<void> 
 
   trySaveKuer(deps, {
     day,
+    market: opts.market,
     createdAt: now.toISOString(),
     scanSummary: opts.scanSummary,
     dossier,

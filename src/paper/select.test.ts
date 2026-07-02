@@ -323,6 +323,37 @@ describe("runKuer", () => {
     expect(watchSaves[0].entries[0].note).toContain("Pullback");
   });
 
+  it("the second Kür of the day MERGES the watchlist — firedKinds survive (Beschluss 2026-07-02)", async () => {
+    const watchSaves: WatchlistState[] = [];
+    const existing: WatchlistState = {
+      day: DAY,
+      entries: [{ ticker: "TSLA", note: "Morgen-Kür", addedDay: DAY, firedKinds: ["ema-cross-up"] }],
+      lastQuotes: { TSLA: { close: 375, changePct: 0, high: 380, low: 370 } },
+    };
+    const twoCandidates = JSON.stringify({
+      candidates: [
+        { ticker: "NVDA", angle: "Long Momentum", catalyst: "Earnings", sentiment: "x" },
+        { ticker: "AMD", angle: "Pullback", catalyst: "Sympathy", sentiment: "y" },
+      ],
+      marketContext: "",
+    });
+    const { deps } = makeDeps(freshPortfolio(1000), quotes, {
+      researchRunner: vi.fn(async () => twoCandidates),
+      saveWatchlist: (s) => watchSaves.push(s),
+      loadWatchlist: () => existing,
+    });
+    await runKuer({ scanSummary: "" }, deps);
+    expect(watchSaves[0].entries.map((e) => e.ticker)).toEqual(["TSLA", "AMD"]); // NVDA traded
+    expect(watchSaves[0].entries[0].firedKinds).toEqual(["ema-cross-up"]); // not re-armed
+    expect(watchSaves[0].lastQuotes).toEqual(existing.lastQuotes);
+  });
+
+  it("keys the Kür artifact by market so two Kürs per day coexist", async () => {
+    const { deps, kuerSaves } = makeDeps(freshPortfolio(1000), quotes);
+    await runKuer({ scanSummary: "", market: "us", marketLabel: "US-Markt" }, deps);
+    expect(kuerSaves[0].market).toBe("us");
+  });
+
   it("a saveWatchlist failure never breaks the Kür", async () => {
     const { deps, sent } = makeDeps(freshPortfolio(1000), quotes, {
       saveWatchlist: () => {

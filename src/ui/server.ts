@@ -10,7 +10,7 @@ import { timingSafeEqual } from "node:crypto";
 import { equity } from "../paper/engine";
 import { loadPortfolio } from "../paper/store";
 import { readTickSeries } from "../paper/tickHistory";
-import { listKuerDays, loadKuerArtifact } from "../paper/kuerArtifact";
+import { listKuerKeys, loadKuerArtifact } from "../paper/kuerArtifact";
 import { dailyPerformance, equitySeries } from "./series";
 
 export interface UiServerOptions {
@@ -108,12 +108,13 @@ export function createUiServer(opts: UiServerOptions): Server {
         return;
       }
       if (path === "/api/kuer/days") {
-        sendJson(res, listKuerDays(opts.dir));
+        // Keys, not just days: in xetra+us mode a day has one artifact per market.
+        sendJson(res, listKuerKeys(opts.dir));
         return;
       }
       if (path === "/api/kuer") {
         const day = url.searchParams.get("day") ?? "";
-        if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) {
+        if (!/^\d{4}-\d{2}-\d{2}(-[a-z]+)?$/.test(day)) {
           res.writeHead(400).end("bad day");
           return;
         }

@@ -159,6 +159,13 @@ const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<
 const nameLabel = (x) =>
   x.name ? `${esc(x.name)} <span class="tk">(${esc(x.ticker)})</span>` : esc(x.ticker);
 
+// Human text per non-decided Kür status (kuerArtifact.ts knows four states).
+const SKIP_TEXT = {
+  "skipped-unreadable": "Entscheidung unlesbar — keine Trades an diesem Tag.",
+  "skipped-limit": "Claude war limitiert (Usage-Limit) — Kür an diesem Tag ausgefallen.",
+  "skipped-timeout": "Zeitüberschreitung — Kür an diesem Tag ausgefallen.",
+};
+
 function renderKuerArtifact(a) {
   const debates = a.debate?.debates ?? [];
   const cards = (a.dossier?.candidates ?? []).map((c) => {
@@ -179,8 +186,8 @@ function renderKuerArtifact(a) {
     a.dossier ? "" : '<p class="empty">Research fehlgeschlagen — entschieden auf Scan-Basis.</p>',
     cards.join(""),
     a.dossier && !a.debate ? '<p class="empty">Keine Debatte verfügbar.</p>' : "",
-    a.status === "skipped-unreadable"
-      ? '<p class="empty">Entscheidung unlesbar — keine Trades an diesem Tag.</p>'
+    a.status !== "decided"
+      ? `<p class="empty">${SKIP_TEXT[a.status] ?? "Kür an diesem Tag ausgefallen."}</p>`
       : `<article><h3>Mr Apes Begründung</h3><pre>${esc(a.decisionJournal ?? "")}</pre></article>`,
     orders.length ? `<h3>Platzierte Orders</h3>${orders.join("")}` : a.status === "decided" ? '<p class="empty">Keine Orders platziert.</p>' : "",
     rejected.length ? `<h3>Abgelehnt</h3>${rejected.join("")}` : "",

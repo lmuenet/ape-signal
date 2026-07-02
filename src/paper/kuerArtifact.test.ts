@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { listKuerDays, loadKuerArtifact, saveKuerArtifact, type KuerArtifact } from "./kuerArtifact";
+import { listKuerKeys, loadKuerArtifact, saveKuerArtifact, type KuerArtifact } from "./kuerArtifact";
 
 function artifact(day: string): KuerArtifact {
   return {
@@ -42,13 +42,13 @@ describe("kuerArtifact", () => {
     }
   });
 
-  it("lists days newest first, ignoring foreign files", () => {
+  it("lists keys newest first, ignoring foreign files", () => {
     const dir = mkdtempSync(join(tmpdir(), "ape-kuer-"));
     try {
       saveKuerArtifact(dir, artifact("2026-06-10"));
       saveKuerArtifact(dir, artifact("2026-06-12"));
       saveKuerArtifact(dir, artifact("2026-06-11"));
-      expect(listKuerDays(dir)).toEqual(["2026-06-12", "2026-06-11", "2026-06-10"]);
+      expect(listKuerKeys(dir)).toEqual(["2026-06-12", "2026-06-11", "2026-06-10"]);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -57,7 +57,24 @@ describe("kuerArtifact", () => {
   it("lists nothing when the directory does not exist", () => {
     const dir = mkdtempSync(join(tmpdir(), "ape-kuer-"));
     try {
-      expect(listKuerDays(dir)).toEqual([]);
+      expect(listKuerKeys(dir)).toEqual([]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("keys per day+market so two Kürs per day coexist (xetra+us, Beschluss 2026-07-02)", () => {
+    const dir = mkdtempSync(join(tmpdir(), "ape-kuer-"));
+    try {
+      const xetra: KuerArtifact = { ...artifact("2026-07-02"), market: "xetra" };
+      const us: KuerArtifact = { ...artifact("2026-07-02"), market: "us" };
+      saveKuerArtifact(dir, xetra);
+      saveKuerArtifact(dir, us);
+      expect(loadKuerArtifact(dir, "2026-07-02-xetra")).toEqual(xetra);
+      expect(loadKuerArtifact(dir, "2026-07-02-us")).toEqual(us);
+      // Legacy day-only files stay listable next to market-keyed ones.
+      saveKuerArtifact(dir, artifact("2026-07-01"));
+      expect(listKuerKeys(dir)).toEqual(["2026-07-02-xetra", "2026-07-02-us", "2026-07-01"]);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

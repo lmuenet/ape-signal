@@ -49,3 +49,21 @@ export function seedWatchlist(day: string, entries: WatchlistEntry[]): Watchlist
   }
   return { day, entries: deduped };
 }
+
+/**
+ * Merge new seed entries into an existing SAME-DAY state (Beschluss 2026-07-02,
+ * Doppel-Kür): existing entries keep their firedKinds — a trigger that already
+ * fired this morning must not re-arm on the second Kür — and the lastQuotes
+ * cross-baseline stays continuous. Another day (or no state) starts fresh.
+ */
+export function mergeWatchlist(
+  existing: WatchlistState | null,
+  day: string,
+  entries: WatchlistEntry[],
+): WatchlistState {
+  const fresh = seedWatchlist(day, entries);
+  if (!existing || existing.day !== day) return fresh;
+  const have = new Set(existing.entries.map((e) => e.ticker.toUpperCase()));
+  const added = fresh.entries.filter((e) => !have.has(e.ticker));
+  return { day, entries: [...existing.entries, ...added], lastQuotes: existing.lastQuotes };
+}

@@ -13,7 +13,7 @@ import { fetchEarningsToday } from "./earnings";
 import { createClaudeRunner, resolveWatchdog } from "../claude/invoke";
 import { runKuer } from "../paper/select";
 import { saveKuerArtifact } from "../paper/kuerArtifact";
-import { saveWatchlist } from "../paper/watchlist";
+import { loadWatchlist, saveWatchlist } from "../paper/watchlist";
 import { resolveAndFetchEur } from "../paper/eurPricing";
 import {
   appendJournal,
@@ -121,9 +121,9 @@ async function main(): Promise<void> {
       .filter((l) => l && l.trim() !== "")
       .join("\n");
     await runKuer(
-      // Market label for the Telegram posts — in xetra+us mode two Kürs run per
-      // day; the label says which one is talking.
-      { scanSummary, marketLabel: marketDisplay(market) },
+      // Market for the artifact key + Telegram label — in xetra+us mode two
+      // Kürs run per day and must not overwrite each other.
+      { scanSummary, market, marketLabel: marketDisplay(market) },
       {
         loadPortfolio: () => loadPortfolio(dir, startBalance),
         savePortfolio: (p) => savePortfolio(dir, p),
@@ -138,6 +138,7 @@ async function main(): Promise<void> {
         send: notify,
         saveKuer: (a) => saveKuerArtifact(dir, a),
         saveWatchlist: (s) => saveWatchlist(dir, s),
+        loadWatchlist: () => loadWatchlist(dir),
         berlinDay,
         language: env.language,
       },
