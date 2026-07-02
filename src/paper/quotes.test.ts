@@ -56,6 +56,20 @@ describe("fetchTickQuotes", () => {
       fetchTickQuotes(["NVDA"], () => Promise.resolve({ ok: false, status: 429 } as unknown as Response)),
     ).rejects.toThrow(/429/);
   });
+
+  it("drops rows with broken price fields instead of coercing them to 0", async () => {
+    // A 0-low would instantly trigger every stop; a 0-close a total-loss valuation.
+    const quotes = await fetchTickQuotes(["NVDA", "TSLA", "AMD"], () =>
+      ok({
+        data: [
+          { s: "NASDAQ:NVDA", d: ["NVDA", 0, 1.2, 102, 99] }, // close 0
+          { s: "NASDAQ:TSLA", d: ["TSLA", 200, -0.5, null, null] }, // missing high/low → 0
+          { s: "NASDAQ:AMD", d: ["AMD", 150, 0.1, 140, 145] }, // high < low (garbage)
+        ],
+      }),
+    );
+    expect(quotes).toEqual({});
+  });
 });
 
 describe("fetchTickQuotesEur", () => {
@@ -119,5 +133,13 @@ describe("fetchTickQuotesEur", () => {
         Promise.resolve({ ok: false, status: 503 } as unknown as Response),
       ),
     ).rejects.toThrow(/503/);
+  });
+
+  it("drops venue rows with broken price fields (holding stays untouched)", async () => {
+    const quotes = await fetchTickQuotesEur(
+      [{ ticker: "QCOM", deSymbol: "TRADEGATE:QCI", isin: QCOM }],
+      () => ok({ data: [{ s: "TRADEGATE:QCI", d: [null, -6.61, null, null] }] }), // all prices missing → 0
+    );
+    expect(quotes).toEqual({});
   });
 });
